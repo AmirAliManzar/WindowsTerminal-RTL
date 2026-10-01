@@ -1,0 +1,36 @@
+{
+  "solution": {
+    "path": "OpenConsole.slnx",
+    "projects": [
+      "src\\audio\\midi\\lib\\midi.vcxproj",
+      "src\\buffer\\out\\lib\\bufferout.vcxproj",
+      "src\\cascadia\\TerminalApp\\dll\\TerminalApp.vcxproj",
+      "src\\cascadia\\TerminalApp\\TerminalAppLib.vcxproj",
+      "src\\cascadia\\TerminalConnection\\TerminalConnection.vcxproj",
+      "src\\cascadia\\TerminalControl\\dll\\TerminalControl.vcxproj",
+      "src\\cascadia\\TerminalControl\\TerminalControlLib.vcxproj",
+      "src\\cascadia\\TerminalCore\\lib\\TerminalCore-lib.vcxproj",
+      "src\\cascadia\\TerminalSettingsAppAdapterLib\\TerminalSettingsAppAdapterLib.vcxproj",
+      "src\\cascadia\\TerminalSettingsEditor\\Microsoft.Terminal.Settings.Editor.vcxproj",
+      "src\\cascadia\\TerminalSettingsModel\\dll\\Microsoft.Terminal.Settings.Model.vcxproj",
+      "src\\cascadia\\TerminalSettingsModel\\Microsoft.Terminal.Settings.ModelLib.vcxproj",
+      "src\\cascadia\\UIHelpers\\UIHelpers.vcxproj",
+      "src\\cascadia\\UIMarkdown\\UIMarkdown.vcxproj",
+      "src\\cascadia\\WindowsTerminal\\WindowsTerminal.vcxproj",
+      "src\\cascadia\\WinRTUtils\\WinRTUtils.vcxproj",
+      "src\\host\\exe\\Host.EXE.vcxproj",
+      "src\\host\\proxy\\Host.Proxy.vcxproj",
+      "src\\internal\\internal.vcxproj",
+      "src\\propsheet\\propsheet.vcxproj",
+      "src\\propslib\\propslib.vcxproj",
+      "src\\renderer\\atlas\\atlas.vcxproj",
+      "src\\renderer\\base\\lib\\base.vcxproj",
+      "src\\renderer\\uia\\lib\\uia.vcxproj",
+      "src\\terminal\\adapter\\lib\\adapter.vcxproj",
+      "src\\terminal\\input\\lib\\terminalinput.vcxproj",
+      "src\\terminal\\parser\\lib\\parser.vcxproj",
+      "src\\tsf\\tsf.vcxproj",
+      "src\\types\\lib\\types.vcxproj"
+    ]
+  }
+}

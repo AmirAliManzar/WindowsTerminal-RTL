@@ -1,0 +1,189 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write      # to publish releases and upload assets
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            asset: WindowsTerminal-RTL-x64
+            patcher: WindowsTerminal-RTL-patcher-x64.exe
+          # Windows on ARM. Best effort: an ARM failure must never stop the x64
+          # assets from being published.
+          - os: windows-11-arm
+            arch: arm64
+            asset: WindowsTerminal-RTL-arm64
+            patcher: WindowsTerminal-RTL-patcher-arm64.exe
+            best_effort: 'true'
+
+    env:
+      # vcpkg resolves versions from git; the CLI fetch is far more reliable
+      # behind a flaky runner network than libgit2's.
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch == 'arm64' && 'x64' || 'x64' }}
+
+      - uses: microsoft/setup-msbuild@v2
+
+      # The probes need no Windows Terminal, just DirectWrite. They answer
+      # questions that staring at a terminal cannot: whether the reordering
+      # round-trips, whether any installed font fuses lam-alef, and which font
+      # fits the cell grid.
+      - name: Run the DirectWrite probes
+        shell: cmd
+        continue-on-error: ${{ matrix.best_effort == 'true' }}
+        run: |
+          mkdir artifacts
+          cd tools\bidi-probe
+          for %%P in (probe-rtl-layout probe-glyph-order probe-lamalef probe-font-fit probe-glyph-direction) do (
+            cl /nologo /EHsc /std:c++20 %%P.cpp /Fe:%%P.exe /link dwrite.lib || exit /b 1
+            echo ### %%P >> ..\..\artifacts\probes-%%P.txt
+            %%P.exe >> ..\..\artifacts\probes-%%P.txt 2>&1
+          )
+
+      - name: Build the portable terminal
+        shell: pwsh
+        continue-on-error: ${{ matrix.best_effort == 'true' }}
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & powershell -ExecutionPolicy Bypass -File scripts\build-portable.ps1 `
+              -Arch ${{ matrix.arch }} `
+              -OutDir "${{ github.workspace }}\packaged"
+
+      # No dependencies, links shell32 directly, so it builds in seconds for the
+      # same architecture and comes out a couple of hundred kilobytes.
+      - name: Build the patcher
+        shell: pwsh
+        continue-on-error: ${{ matrix.best_effort == 'true' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          cargo build --release --manifest-path patcher/Cargo.toml
+          $src = 'patcher/target/release/WindowsTerminal-RTL-patcher.exe'
+          if (-not (Test-Path $src)) { throw "patcher not built: $src" }
+          $out = "artifacts/${{ matrix.patcher }}"
+          Copy-Item $src $out -Force
+          # Record the Windows Terminal build these DLLs came from, so the
+          # patcher and the README can talk about a specific version.
+          @{
+            arch   = '${{ matrix.arch }}'
+            upstream_ref = (Get-Content UPSTREAM_REF -Raw).Trim()
+            built_utc = (Get-Date).ToUniversalTime().ToString('s')
+            runner = '${{ matrix.os }}'
+          } | ConvertTo-Json | Set-Content "artifacts/build-info-${{ matrix.arch }}.json"
+
+      - name: Collect assets
+        shell: pwsh
+        if: always()
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $dir = "packaged/WindowsTerminal-RTL-${{ matrix.arch }}"
+          if (Test-Path $dir) {
+            # A zip, not a raw folder upload: the artifact API is per-file and a
+            # portable build is ~90 files.
+            Compress-Archive -Path "$dir/*" -DestinationPath "artifacts/${{ matrix.asset }}.zip" -Force
+            "ok" | Out-File artifacts/collected-${{ matrix.arch }}.txt
+          } else {
+            "no portable build" | Out-File artifacts/collected-${{ matrix.arch }}.txt
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out-${{ matrix.arch }}
+          path: artifacts/*
+          if-no-files-found: ${{ matrix.best_effort == 'true' && 'warn' || 'error' }}
+
+  # One publishing job, so the ARM build cannot race the x64 one into the same
+  # release.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dl
+
+      - name: Assemble release assets
+        run: |
+          set -e
+          mkdir -p release-assets
+
+          for arch in x64 arm64; do
+            src="dl/out-$arch"
+            [ -d "$src" ] || continue
+            # The collector writes a marker even when the build failed, so check
+            # what it actually managed to produce.
+            for f in "$src"/*.zip "$src"/*patcher*.exe "$src"/build-info-*.json "$src"/probes-*.txt; do
+              [ -e "$f" ] || continue
+              cp -f "$f" release-assets/
+            done
+          done
+
+          # The patch itself, for anyone who wants to build from upstream.
+          cp -f patch/windowsterminal-rtl.patch release-assets/
+          cp -f patch/build-unpackaged.patch release-assets/
+          cp -f UPSTREAM_REF release-assets/
+
+          echo '--- assets ---'
+          ls -la release-assets
+          echo '--- sha256 ---'
+          cd release-assets
+          for f in *.zip *.exe *.patch; do
+            [ -f "$f" ] || continue
+            sha256sum "$f" | tee "$f.sha256"
+          done
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          tag="${GITHUB_REF#refs/tags/}"
+          if [ "$tag" = "$GITHUB_REF" ]; then tag="rolling"; fi
+          echo "Publishing to release: $tag"
+
+          if [ "$tag" = "rolling" ]; then
+            notes="$(printf 'Automatic build of main @ %s\n\nAssets: %s' \
+              "$GITHUB_SHA" "$(ls release-assets | tr '\n' ' ')")"
+            if gh release view rolling >/dev/null 2>&1; then
+              gh release edit rolling --notes "$notes"
+            else
+              gh release create rolling --title "Rolling build (auto)" --notes "$notes" --prerelease
+            fi
+          else
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release edit "$tag" --title "Windows Terminal RTL $tag" --notes "Refreshed build of $GITHUB_SHA"
+            else
+              gh release create "$tag" --verify-tag --title "Windows Terminal RTL $tag" --generate-notes
+            fi
+          fi
+
+          gh release upload "$tag" release-assets/* --clobber
+          echo '--- published ---'
+          gh release view "$tag" --json assets --jq '.assets[].name'

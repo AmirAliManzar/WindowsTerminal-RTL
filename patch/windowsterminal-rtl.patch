@@ -1,0 +1,664 @@
+﻿diff --git a/src/renderer/atlas/AtlasEngine.cpp b/src/renderer/atlas/AtlasEngine.cpp
+index 727f01012..970b08618 100644
+--- a/src/renderer/atlas/AtlasEngine.cpp
++++ b/src/renderer/atlas/AtlasEngine.cpp
+@@ -31,6 +31,28 @@
+ 
+ using namespace Microsoft::Console::Render::Atlas;
+ 
++// LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): word order, and the two things
++// that have to agree with it.
++//
++// false (the default here) means the words stay in the order they were typed:
++// typing "╪│┘ä╪º┘à ╪«┘ê╪¿█î╪ƒ" after a prompt shows the words in that same order, left to
++// right, with the shaping and joining still done properly. Setting it true gives
++// Unicode bidi rule L2, so the first logical word ends up on the right and you
++// read the line right to left - what a browser, Word and VS Code do.
++//
++// It has to steer two decisions, and getting only one of them is worse than
++// either:
++//
++//   1. _applyBidiVisualOrder reverses whole runs of RTL clusters (rule L2).
++//   2. _mapComplex asks DirectWrite for RTL *placements*, which puts each
++//      following glyph at a negative x. The renderer accumulates advances left to
++//      right, so if the cluster order stays in typed order while the placements
++//      are RTL, every letter lands in the wrong cell.
++//
++// Turning off only (1) produced exactly that: "╪│┘ä╪º┘à ╪«┘ê╪¿█î╪ƒ" came out as
++// "╪ƒ█îΓÇî╪¿┘ê╪«┘Ç ┘àΓÇî╪º┘ä╪│", with the question mark jumping to the far left.
++static constexpr bool BidiUnicodeWordOrder = true;
++
+ #pragma warning(suppress : 26455) // Default constructor may not throw. Declare it 'noexcept' (f.6).
+ AtlasEngine::AtlasEngine()
+ {
+@@ -632,6 +654,22 @@ try
+         auto left = options.coordCursor.x - (_api.viewportOffset.x >> shift);
+         auto right = left + cursorWidth;
+ 
++        // If this row was reordered into visual order, the cursor has to follow:
++        // the application addresses cells logically, but draws on the screen
++        // visually. Without this the caret would jump to the wrong column on every
++        // RTL line, which is exactly what breaks typing and TUI apps.
++        if (_p.rows[top]->hasBidi)
++        {
++            const auto& map = _p.rows[top]->columnToVisual;
++            const auto logical = left;
++            if (logical >= 0 && static_cast<size_t>(logical) < map.size())
++            {
++                const auto visual = map[logical];
++                left = visual;
++                right = visual + cursorWidth;
++            }
++        }
++
+         left <<= shift;
+         right <<= shift;
+ 
+@@ -786,6 +824,7 @@ void AtlasEngine::_recreateCellCountDependentResources()
+     _api.bufferLineColumn.reserve(projectedTextSize + 1);
+ 
+     _api.analysisResults = std::vector<TextAnalysisSinkResult>{};
++    _api.bidiLevels = std::vector<BidiLevelRange>{};
+     _api.clusterMap = Buffer<u16>{ projectedTextSize };
+     _api.textProps = Buffer<DWRITE_SHAPING_TEXT_PROPERTIES>{ projectedTextSize };
+     _api.glyphIndices = Buffer<u16>{ projectedGlyphSize };
+@@ -875,6 +914,279 @@ void AtlasEngine::_flushBufferLine()
+         segmentBeg = segmentEnd;
+         custom = !custom;
+     }
++
++    // The row is fully shaped now. If any of it turned out to be RTL, reorder the
++    // whole row from logical to visual order (Unicode bidi rule L2). For rows
++    // without RTL content this returns immediately without modifying anything.
++    {
++        auto& row = *_p.rows[_api.lastPaintBufferLineCoord.y];
++        _applyBidiVisualOrder(row, _api.lastPaintBufferLineCoord.y);
++    }
++}
++
++// Reorders a finished row's glyph arrays from logical to visual order.
++//
++// Why this is sufficient: both backends advance `baselineX` by summing
++// `glyphAdvances` in array order (BackendD2D.cpp:306, BackendD3D.cpp:1203) and
++// never look up a per-glyph X. So permuting the parallel arrays into visual
++// order places every glyph correctly, with no backend change required. The row
++// keeps its exact width because each cluster's advance was already forced to
++// (colEnd - colBeg) * cellSize.x during shaping.
++void AtlasEngine::_applyBidiVisualOrder(ShapedRow& row, const u16 y) noexcept
++{
++    // Fast path: no cluster at all, or nothing RTL. Touch nothing. This keeps
++    // the stock behaviour bit-for-bit identical for LTR-only content.
++    if (row.clusters.empty())
++    {
++        return;
++    }
++
++    // LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): word order. See
++    // BidiUnicodeWordOrder at the top of this file. When it is false, rule L2 below
++    // is skipped and the glyphs inside an RTL cluster are emitted in the order
++    // DirectWrite produced them, because _mapComplex has then asked for left to
++    // right placements and reversing them would put every letter in the wrong
++    // cell.
++    static constexpr bool unicodeWordOrder = BidiUnicodeWordOrder;
++
++    // Find the true maximum level and whether anything is RTL at all.
++    u8 maxLevel = 0;
++    bool hasOdd = false;
++    for (const auto& c : row.clusters)
++    {
++        maxLevel = std::max(maxLevel, c.level);
++        hasOdd = hasOdd || ((c.level & 1) != 0);
++    }
++    if (!hasOdd)
++    {
++        row.clusters.clear();
++        return;
++    }
++
++    // Keep the font each cluster came from. We resolve it by walking `mappings`
++    // (which cover the glyph array in contiguous, ascending ranges) *after*
++    // shaping, because _mapRegularText only appends/coalesces mappings once
++    // _mapComplex has returned.
++    struct ClusterWithFont
++    {
++        u32 glyphsFrom;
++        u32 glyphsTo;
++        u16 colBeg;
++        u16 colEnd;
++        u8 level;
++        IDWriteFontFace2* fontFace; // raw; borrowed from the original mappings
++    };
++    auto sized = std::vector<ClusterWithFont>{};
++    sized.reserve(row.clusters.size());
++
++    u8 minOdd = 0xff;
++    for (const auto& c : row.clusters)
++    {
++        if (c.level & 1)
++        {
++            minOdd = std::min(minOdd, c.level);
++        }
++        IDWriteFontFace2* face = nullptr;
++        for (const auto& m : row.mappings)
++        {
++            if (c.glyphsFrom >= m.glyphsFrom && c.glyphsFrom < m.glyphsTo)
++            {
++                face = m.fontFace.get();
++                break;
++            }
++        }
++        sized.push_back(ClusterWithFont{ c.glyphsFrom, c.glyphsTo, c.colBeg, c.colEnd, c.level, face });
++    }
++
++    // Unicode bidi rule L2: from the highest level down to the lowest odd one,
++    // reverse every contiguous sequence of clusters at or above that level.
++    // For "hello ╪│┘ä╪º┘à" this flips only the Persian segment; for a fully Persian
++    // line it flips the whole line.
++    //
++    // This is correct *because* IDWriteTextAnalyzer::GetGlyphs hands back the
++    // glyphs of an RTL run in logical order (the same behaviour that made Zed's
++    // gpui_windows renderer mirror RTL words, and what upstream's own
++    // AtlasEngine bidi PR #20156 observed). Reversing the cluster sequence and
++    // then emitting the glyphs by cluster therefore yields visual order.
++    // Set this to false if a future DirectWrite ever changes that contract, in
++    // which case only whole runs should be swapped, not reversed internally.
++    static constexpr bool reverseWithinSameLevelRun = true;
++
++    // Rule L2 itself. Skipped by default - see the note at the top of this
++    // function - so the words keep the order they were typed in while the glyphs
++    // inside each RTL cluster are still emitted back to front, which is what makes
++    // the letters of a word join correctly.
++    if (unicodeWordOrder)
++    {
++        for (u32 level = maxLevel; level >= minOdd; --level)
++        {
++            size_t i = 0;
++            while (i < sized.size())
++            {
++                if (sized[i].level >= level)
++                {
++                    size_t j = i;
++                    while (j < sized.size() && sized[j].level >= level)
++                    {
++                        ++j;
++                    }
++
++                    if (reverseWithinSameLevelRun)
++                    {
++                        std::reverse(sized.begin() + i, sized.begin() + j);
++                    }
++                    else
++                    {
++                        // Reverse the order of maximal equal-level runs, but leave the
++                        // clusters inside each run in the order DirectWrite produced.
++                        size_t a = i;
++                        while (a < j)
++                        {
++                            size_t b = a;
++                            while (b < j && sized[b].level == sized[a].level)
++                            {
++                                ++b;
++                            }
++                            std::reverse(sized.begin() + a, sized.begin() + b);
++                            a = b;
++                        }
++                    }
++
++                    i = j;
++                }
++                else
++                {
++                    ++i;
++                }
++            }
++        }
++    }
++
++    // Emit the glyph arrays in visual order, rebuilding `mappings` on the way.
++    // Adjacent clusters using the same font are coalesced, exactly like
++    // _mapRegularText does. Interleaved fonts just produce more ranges, which
++    // is still correct - only slightly less efficient.
++    auto newIndices = std::vector<u16>{};
++    auto newAdvances = std::vector<f32>{};
++    auto newOffsets = std::vector<DWRITE_GLYPH_OFFSET>{};
++    auto newColors = std::vector<u32>{};
++    auto newMappings = std::vector<FontMapping>{};
++    newIndices.reserve(row.glyphIndices.size());
++    newAdvances.reserve(row.glyphAdvances.size());
++    newOffsets.reserve(row.glyphOffsets.size());
++    newColors.reserve(row.colors.size());
++    newMappings.reserve(row.mappings.size());
++
++    const auto width = static_cast<size_t>(std::max<til::CoordType>(_p.s->viewportCellCount.x, 0));
++    // Start from the identity so columns no cluster covered keep their position.
++    row.columnToVisual.assign(width, 0);
++    for (size_t col = 0; col < width; ++col)
++    {
++        row.columnToVisual[col] = gsl::narrow_cast<u16>(col);
++    }
++
++    // `visualCol` walks the row left to right as we emit, so we learn where each
++    // logical column ended up.
++    u16 visualCol = sized.empty() ? 0 : static_cast<u16>(std::min(static_cast<size_t>(sized.front().colBeg), width));
++
++    for (const auto& c : sized)
++    {
++        const auto from = gsl::narrow_cast<u32>(newIndices.size());
++        if (c.level & 1 && unicodeWordOrder)
++        {
++            // A cluster at an odd level runs right to left, and DirectWrite hands
++            // its glyphs back in logical order, so they have to be emitted back to
++            // front. Only when the cluster order was reversed too: if the words
++            // keep their typed order then _mapComplex has asked for left to right
++            // placements, and reversing here would put every letter in the wrong
++            // cell.
++            for (auto g = c.glyphsTo; g > c.glyphsFrom; --g)
++            {
++                const auto i = g - 1;
++                newIndices.push_back(row.glyphIndices[i]);
++                newAdvances.push_back(row.glyphAdvances[i]);
++                newOffsets.push_back(row.glyphOffsets[i]);
++                newColors.push_back(row.colors[i]);
++            }
++        }
++        else
++        {
++            newIndices.insert(newIndices.end(), row.glyphIndices.begin() + c.glyphsFrom, row.glyphIndices.begin() + c.glyphsTo);
++            newAdvances.insert(newAdvances.end(), row.glyphAdvances.begin() + c.glyphsFrom, row.glyphAdvances.begin() + c.glyphsTo);
++            newOffsets.insert(newOffsets.end(), row.glyphOffsets.begin() + c.glyphsFrom, row.glyphOffsets.begin() + c.glyphsTo);
++            newColors.insert(newColors.end(), row.colors.begin() + c.glyphsFrom, row.colors.begin() + c.glyphsTo);
++        }
++
++        if (newMappings.empty() || newMappings.back().fontFace.get() != c.fontFace)
++        {
++            newMappings.emplace_back(c.fontFace, from, gsl::narrow_cast<u32>(newIndices.size()));
++        }
++        else
++        {
++            newMappings.back().glyphsTo = gsl::narrow_cast<u32>(newIndices.size());
++        }
++
++        // Record the visual position of every logical column of this cluster.
++        const auto beg = std::min(static_cast<size_t>(c.colBeg), width);
++        const auto end = std::min(static_cast<size_t>(c.colEnd), width);
++        for (size_t col = beg; col < end; ++col)
++        {
++            row.columnToVisual[col] = visualCol++;
++        }
++    }
++
++    // The colour planes are indexed by *column*, and the selection/search
++    // highlights were painted into them using logical column arithmetic. Move
++    // them into visual space too, otherwise the highlight would end up under
++    // the wrong cells. (_flushBufferLine runs before Backend*::Render, which is
++    // where _drawBackground samples these, so this is early enough.)
++    {
++        const auto shift = gsl::narrow_cast<u8>(row.lineRendition != LineRendition::SingleWidth);
++        const auto rowOffset = static_cast<size_t>(_p.colorBitmapRowStride) * y;
++        const auto cells = static_cast<size_t>(width) << shift;
++        if (rowOffset + cells <= _p.colorBitmapDepthStride)
++        {
++            // Only touch the planes (and invalidate the GPU copy) if the row
++            // actually moved anything.
++            bool permuted = false;
++            for (size_t col = 0; col < width && !permuted; ++col)
++            {
++                permuted = static_cast<size_t>(row.columnToVisual[col]) != col;
++            }
++
++            if (permuted)
++            {
++                u32* const planes[3] = { _p.backgroundBitmap.data(), _p.foregroundBitmap.data(), _p.underlineBitmap.data() };
++                auto scratch = std::vector<u32>(cells);
++                for (u32* const plane : planes)
++                {
++                    auto* p = plane + rowOffset;
++                    std::copy_n(p, cells, scratch.begin());
++                    for (size_t col = 0; col < cells; ++col)
++                    {
++                        const auto visual = static_cast<size_t>(row.columnToVisual[col >> shift]) << shift;
++                        p[visual] = scratch[col];
++                    }
++                }
++
++                // The backends skip re-uploading the colour planes when the
++                // generation counter has not changed, so it must be bumped here
++                // or they would keep drawing the pre-permutation image.
++                for (auto& generation : _p.colorBitmapGenerations)
++                {
++                    generation.bump();
++                }
++            }
++        }
++    }
++
++    row.glyphIndices = std::move(newIndices);
++    row.glyphAdvances = std::move(newAdvances);
++    row.glyphOffsets = std::move(newOffsets);
++    row.colors = std::move(newColors);
++    row.mappings = std::move(newMappings);
++    row.clusters.clear();
++    row.hasBidi = true;
+ }
+ 
+ void AtlasEngine::_mapRegularText(size_t offBeg, size_t offEnd)
+@@ -924,6 +1236,7 @@ void AtlasEngine::_mapRegularText(size_t offBeg, size_t offEnd)
+ 
+                     for (size_t i = 0; i < complexityLength; ++i)
+                     {
++                        const auto glyphsFrom = gsl::narrow_cast<u32>(row.glyphIndices.size());
+                         const auto col1 = _api.bufferLineColumn[idx + i + 0];
+                         const auto col2 = _api.bufferLineColumn[idx + i + 1];
+                         const auto glyphAdvance = (col2 - col1) * _p.s->font->cellSize.x;
+@@ -932,6 +1245,13 @@ void AtlasEngine::_mapRegularText(size_t offBeg, size_t offEnd)
+                         row.glyphAdvances.emplace_back(static_cast<f32>(glyphAdvance));
+                         row.glyphOffsets.emplace_back();
+                         row.colors.emplace_back(fg);
++                        // Unshaped text is always level 0, but it still needs a
++                        // cluster record so that L2 can reorder across it.
++                        row.clusters.emplace_back(ShapedRow::VisualCluster{ glyphsFrom,
++                                                                           glyphsFrom + 1,
++                                                                           gsl::narrow_cast<u16>(col1),
++                                                                           gsl::narrow_cast<u16>(col2),
++                                                                           0 });
+                     }
+                 }
+                 else
+@@ -979,6 +1299,9 @@ void AtlasEngine::_mapBuiltinGlyphs(size_t offBeg, size_t offEnd)
+     {
+         const auto col = _api.bufferLineColumn[i];
+         row.colors.emplace_back(colors[static_cast<size_t>(col) << shift]);
++        // Box drawing is inherently LTR and always one cell wide.
++        const auto g = gsl::narrow_cast<u32>(initialIndicesCount + (i - offBeg));
++        row.clusters.emplace_back(ShapedRow::VisualCluster{ g, g + 1, gsl::narrow_cast<u16>(col), gsl::narrow_cast<u16>(col + 1), 0 });
+     }
+ 
+     row.mappings.emplace_back(nullptr, gsl::narrow_cast<u32>(initialIndicesCount), gsl::narrow_cast<u32>(row.glyphIndices.size()));
+@@ -1040,13 +1363,41 @@ void AtlasEngine::_mapCharacters(const wchar_t* text, const u32 textLength, u32*
+ void AtlasEngine::_mapComplex(IDWriteFontFace2* mappedFontFace, u32 idx, u32 length, ShapedRow& row)
+ {
+     _api.analysisResults.clear();
++    _api.bidiLevels.clear();
+ 
+     TextAnalysisSource analysisSource{ _p.userLocaleName.c_str(), _api.bufferLine.data(), gsl::narrow<UINT32>(_api.bufferLine.size()) };
+-    TextAnalysisSink analysisSink{ _api.analysisResults };
++    TextAnalysisSink analysisSink{ _api.analysisResults, _api.bidiLevels };
++
++    // AnalyzeBidi is the call that actually reports SetBidiLevel. AnalyzeScript
++    // only reports SetScriptAnalysis - it never runs the bidi algorithm. Verified
++    // empirically: for "╪│┘ä╪º┘à" AnalyzeScript alone yields 1 script run and 0 bidi
++    // levels, so without this call every cluster would come back level 0 and L2
++    // would never reorder anything.
++    THROW_IF_FAILED(_p.textAnalyzer->AnalyzeBidi(&analysisSource, idx, length, &analysisSink));
+     THROW_IF_FAILED(_p.textAnalyzer->AnalyzeScript(&analysisSource, idx, length, &analysisSink));
+ 
+     for (const auto& a : _api.analysisResults)
+     {
++        // The resolved bidi level for this script run. Script runs and bidi runs
++        // are both partitions of the same text, so the level of the run's first
++        // character is the level that applies to it.
++        u8 level = 0;
++        for (const auto& b : _api.bidiLevels)
++        {
++            if (a.textPosition >= b.textPosition && a.textPosition < b.textPosition + b.textLength)
++            {
++                level = b.level;
++                break;
++            }
++        }
++        // LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): this has to agree with
++        // _applyBidiVisualOrder. RTL placements put each following glyph at a
++        // negative x, which only works if the clusters get reversed as well;
++        // the renderer accumulates advances left to right. Asking for RTL
++        // placements while keeping the typed word order scatters the letters -
++        // "╪│┘ä╪º┘à ╪«┘ê╪¿█î╪ƒ" came out as "╪ƒ█îΓÇî╪¿┘ê╪«┘Ç ┘àΓÇî╪º┘ä╪│". See BidiUnicodeWordOrder.
++        const BOOL isRTL = (BidiUnicodeWordOrder && (level & 1)) ? TRUE : FALSE;
++
+         u32 actualGlyphCount = 0;
+ 
+ #pragma warning(push)
+@@ -1084,7 +1435,7 @@ void AtlasEngine::_mapComplex(IDWriteFontFace2* mappedFontFace, u32 idx, u32 len
+                 /* textLength          */ a.textLength,
+                 /* fontFace            */ mappedFontFace,
+                 /* isSideways          */ false,
+-                /* isRightToLeft       */ 0,
++                /* isRightToLeft       */ isRTL,
+                 /* scriptAnalysis      */ &a.analysis,
+                 /* localeName          */ _p.userLocaleName.c_str(),
+                 /* numberSubstitution  */ nullptr,
+@@ -1136,7 +1487,7 @@ void AtlasEngine::_mapComplex(IDWriteFontFace2* mappedFontFace, u32 idx, u32 len
+             /* fontFace            */ mappedFontFace,
+             /* fontEmSize          */ _p.s->font->fontSize,
+             /* isSideways          */ false,
+-            /* isRightToLeft       */ 0,
++            /* isRightToLeft       */ isRTL,
+             /* scriptAnalysis      */ &a.analysis,
+             /* localeName          */ _p.userLocaleName.c_str(),
+             /* features            */ &features,
+@@ -1149,6 +1500,9 @@ void AtlasEngine::_mapComplex(IDWriteFontFace2* mappedFontFace, u32 idx, u32 len
+ 
+         const auto shift = gsl::narrow_cast<u8>(row.lineRendition != LineRendition::SingleWidth);
+         const auto colors = _p.foregroundBitmap.begin() + _p.colorBitmapRowStride * _api.lastPaintBufferLineCoord.y;
++        // Row-relative base of this run's glyphs, so cluster glyph ranges can be
++        // recorded in row space.
++        const auto glyphsRowBase = gsl::narrow_cast<u32>(row.glyphIndices.size());
+         auto prevCluster = _api.clusterMap[0];
+         size_t beg = 0;
+ 
+@@ -1174,6 +1528,14 @@ void AtlasEngine::_mapComplex(IDWriteFontFace2* mappedFontFace, u32 idx, u32 len
+ 
+             row.colors.insert(row.colors.end(), nextCluster - prevCluster, fg);
+ 
++            // One record per grapheme cluster, carrying the resolved bidi level so
++            // that L2 can reorder clusters (and never individual glyphs) later.
++            row.clusters.emplace_back(ShapedRow::VisualCluster{ glyphsRowBase + gsl::narrow_cast<u32>(prevCluster),
++                                                               glyphsRowBase + gsl::narrow_cast<u32>(nextCluster),
++                                                               gsl::narrow_cast<u16>(col1),
++                                                               gsl::narrow_cast<u16>(col2),
++                                                               level });
++
+             prevCluster = nextCluster;
+             beg = i;
+         }
+@@ -1231,6 +1593,12 @@ void AtlasEngine::_mapReplacementCharacter(u32 from, u32 to, ShapedRow& row)
+         row.glyphAdvances.emplace_back(static_cast<f32>((col2 - col1) * _p.s->font->cellSize.x));
+         row.glyphOffsets.emplace_back();
+         row.colors.emplace_back(colors[static_cast<size_t>(col1) << shift]);
++        // Unmapped characters are rendered LTR, one cell per cluster.
++        row.clusters.emplace_back(ShapedRow::VisualCluster{ gsl::narrow_cast<u32>(row.glyphIndices.size() - 1),
++                                                           gsl::narrow_cast<u32>(row.glyphIndices.size()),
++                                                           gsl::narrow_cast<u16>(col1),
++                                                           gsl::narrow_cast<u16>(col2),
++                                                           0 });
+ 
+         col1 = col2;
+     }
+diff --git a/src/renderer/atlas/AtlasEngine.h b/src/renderer/atlas/AtlasEngine.h
+index 6b5336d46..3fb1393ad 100644
+--- a/src/renderer/atlas/AtlasEngine.h
++++ b/src/renderer/atlas/AtlasEngine.h
+@@ -84,6 +84,7 @@ namespace Microsoft::Console::Render::Atlas
+         void _recreateFontDependentResources();
+         void _recreateCellCountDependentResources();
+         void _flushBufferLine();
++        void _applyBidiVisualOrder(ShapedRow& row, const u16 y) noexcept;
+         void _mapRegularText(size_t offBeg, size_t offEnd);
+         void _mapBuiltinGlyphs(size_t offBeg, size_t offEnd);
+         void _mapCharacters(const wchar_t* text, u32 textLength, u32* mappedLength, IDWriteFontFace2** mappedFontFace) const;
+@@ -144,6 +145,7 @@ namespace Microsoft::Console::Render::Atlas
+ 
+             std::array<Buffer<DWRITE_FONT_AXIS_VALUE>, 4> textFormatAxes;
+             std::vector<TextAnalysisSinkResult> analysisResults;
++            std::vector<BidiLevelRange> bidiLevels;
+             Buffer<u16> clusterMap;
+             Buffer<DWRITE_SHAPING_TEXT_PROPERTIES> textProps;
+             Buffer<u16> glyphIndices;
+diff --git a/src/renderer/atlas/DWriteTextAnalysis.cpp b/src/renderer/atlas/DWriteTextAnalysis.cpp
+index 4cc295d36..0bc26a1da 100644
+--- a/src/renderer/atlas/DWriteTextAnalysis.cpp
++++ b/src/renderer/atlas/DWriteTextAnalysis.cpp
+@@ -85,6 +85,14 @@ HRESULT TextAnalysisSource::GetTextBeforePosition(UINT32 textPosition, const WCH
+ 
+ DWRITE_READING_DIRECTION TextAnalysisSource::GetParagraphReadingDirection() noexcept
+ {
++    // UBA rules P2/P3: the paragraph level is determined by the first strong
++    // directional character. Hardcoding LTR here is what prevented Arabic
++    // contextual shaping entirely.
++    const auto ch = firstStrongDirectional(_text, _textLength);
++    if (ch != 0 && isStrongRTL(ch))
++    {
++        return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
++    }
+     return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
+ }
+ 
+@@ -104,8 +112,9 @@ HRESULT TextAnalysisSource::GetNumberSubstitution(UINT32 textPosition, UINT32* t
+     return E_NOTIMPL;
+ }
+ 
+-TextAnalysisSink::TextAnalysisSink(std::vector<TextAnalysisSinkResult>& results) noexcept :
+-    _results{ results }
++TextAnalysisSink::TextAnalysisSink(std::vector<TextAnalysisSinkResult>& results, std::vector<BidiLevelRange>& bidiLevels) noexcept :
++    _results{ results },
++    _bidiLevels{ bidiLevels }
+ {
+ }
+ 
+@@ -168,7 +177,11 @@ HRESULT TextAnalysisSink::SetLineBreakpoints(UINT32 textPosition, UINT32 textLen
+ 
+ HRESULT TextAnalysisSink::SetBidiLevel(UINT32 textPosition, UINT32 textLength, UINT8 explicitLevel, UINT8 resolvedLevel) noexcept
+ {
+-    return E_NOTIMPL;
++    // This is where IDWriteTextAnalyzer hands us the result of the Unicode
++    // Bidirectional Algorithm. Previously this returned E_NOTIMPL, which meant
++    // the levels were computed and then thrown away.
++    _bidiLevels.emplace_back(BidiLevelRange{ textPosition, textLength, resolvedLevel });
++    return S_OK;
+ }
+ 
+ HRESULT TextAnalysisSink::SetNumberSubstitution(UINT32 textPosition, UINT32 textLength, IDWriteNumberSubstitution* numberSubstitution) noexcept
+diff --git a/src/renderer/atlas/DWriteTextAnalysis.h b/src/renderer/atlas/DWriteTextAnalysis.h
+index 2f28b2f83..68f6a4b18 100644
+--- a/src/renderer/atlas/DWriteTextAnalysis.h
++++ b/src/renderer/atlas/DWriteTextAnalysis.h
+@@ -34,7 +34,7 @@ namespace Microsoft::Console::Render::Atlas
+ 
+     struct TextAnalysisSink final : IDWriteTextAnalysisSink
+     {
+-        TextAnalysisSink(std::vector<TextAnalysisSinkResult>& results) noexcept;
++        TextAnalysisSink(std::vector<TextAnalysisSinkResult>& results, std::vector<BidiLevelRange>& bidiLevels) noexcept;
+ #ifndef NDEBUG
+         ~TextAnalysisSink();
+ #endif
+@@ -49,6 +49,7 @@ namespace Microsoft::Console::Render::Atlas
+ 
+     private:
+         std::vector<TextAnalysisSinkResult>& _results;
++        std::vector<BidiLevelRange>& _bidiLevels;
+ #ifndef NDEBUG
+         ULONG _refCount = 1;
+ #endif
+diff --git a/src/renderer/atlas/common.h b/src/renderer/atlas/common.h
+index fc25d04ce..f790438d2 100644
+--- a/src/renderer/atlas/common.h
++++ b/src/renderer/atlas/common.h
+@@ -315,6 +315,54 @@ namespace Microsoft::Console::Render::Atlas
+         DWRITE_SCRIPT_ANALYSIS analysis;
+     };
+ 
++    // Resolved embedding level of a range of text, as computed by the Unicode
++    // Bidirectional Algorithm inside IDWriteTextAnalyzer. Odd levels are RTL.
++    struct BidiLevelRange
++    {
++        uint32_t textPosition = 0;
++        uint32_t textLength = 0;
++        uint8_t level = 0;
++    };
++
++    // Returns the first strong directional character of a string, or 0 if there
++    // is none. Used to implement UBA rules P2/P3 for GetParagraphReadingDirection.
++    constexpr char32_t firstStrongDirectional(const wchar_t* text, const size_t length) noexcept
++    {
++        for (size_t i = 0; i < length; ++i)
++        {
++            const auto ch = text[i];
++            // LTR strong (L), plus the explicit LTR controls.
++            if ((ch >= 0x0041 && ch <= 0x005A) || (ch >= 0x0061 && ch <= 0x007A) ||
++                (ch >= 0x00C0 && ch <= 0x02B8 && ch != 0x00D7 && ch != 0x00F7) ||
++                (ch >= 0x0370 && ch <= 0x058F) || // Greek..Armenian, stops before Hebrew
++                (ch >= 0x0900 && ch <= 0x1FFF) || (ch >= 0x2C00 && ch <= 0xD7FF) ||
++                (ch >= 0xFB00 && ch <= 0xFB17) || (ch >= 0xFF21 && ch <= 0xFFDF) ||
++                ch == 0x200E || ch == 0x202A || ch == 0x202D || ch == 0x2066)
++            {
++                return ch;
++            }
++            // RTL strong (R / AL), plus the explicit RTL controls.
++            if ((ch >= 0x0590 && ch <= 0x05FF) || // Hebrew
++                (ch >= 0x0600 && ch <= 0x07BF) || // Arabic, Syriac, Thaana, N'Ko
++                (ch >= 0x08A0 && ch <= 0x08FF) || // Arabic Extended-A
++                (ch >= 0xFB1D && ch <= 0xFDFF) || (ch >= 0xFE70 && ch <= 0xFEFF) ||
++                ch == 0x200F || ch == 0x202B || ch == 0x202E || ch == 0x2067 || ch == 0x2069)
++            {
++                return ch;
++            }
++        }
++        return 0;
++    }
++
++    inline constexpr bool isStrongRTL(const char32_t ch) noexcept
++    {
++        return (ch >= 0x0590 && ch <= 0x05FF) || // Hebrew
++            (ch >= 0x0600 && ch <= 0x07BF) || // Arabic, Syriac, Thaana, N'Ko
++            (ch >= 0x08A0 && ch <= 0x08FF) || // Arabic Extended-A
++            (ch >= 0xFB1D && ch <= 0xFDFF) || (ch >= 0xFE70 && ch <= 0xFEFF) ||
++            ch == 0x200F || ch == 0x202B || ch == 0x202E || ch == 0x2067 || ch == 0x2069;
++    }
++
+     enum class GraphicsAPI
+     {
+         Automatic,
+@@ -465,6 +513,19 @@ namespace Microsoft::Console::Render::Atlas
+ 
+     struct ShapedRow
+     {
++        // One entry per grapheme cluster, recorded in *logical* order while shaping.
++        // A cluster may own more than one glyph (combining marks, lam-alef ligatures,
++        // emoji ZWJ sequences), which is why reordering happens on clusters and not
++        // on individual glyphs.
++        struct VisualCluster
++        {
++            u32 glyphsFrom = 0;
++            u32 glyphsTo = 0;
++            u16 colBeg = 0; // logical, viewport-relative, inclusive
++            u16 colEnd = 0; // logical, viewport-relative, exclusive
++            u8 level = 0; // resolved bidi level; odd == RTL
++        };
++
+         void Clear(u16 y, u16 cellHeight) noexcept
+         {
+             mappings.clear();
+@@ -472,6 +533,9 @@ namespace Microsoft::Console::Render::Atlas
+             glyphAdvances.clear();
+             glyphOffsets.clear();
+             colors.clear();
++            clusters.clear();
++            columnToVisual.clear();
++            hasBidi = false;
+             bitmap.active = false;
+             gridLineRanges.clear();
+             lineRendition = LineRendition::SingleWidth;
+@@ -491,6 +555,14 @@ namespace Microsoft::Console::Render::Atlas
+         // Same size as glyphIndices.
+         std::vector<u32> colors;
+ 
++        // BiDi bookkeeping. `hasBidi` is false (and the vectors are empty) for rows
++        // that contain no RTL content, which is the overwhelmingly common case and
++        // keeps the stock code path bit-for-bit identical.
++        std::vector<VisualCluster> clusters;
++        // Maps a logical column to its visual column. Only filled when hasBidi.
++        std::vector<u16> columnToVisual;
++        bool hasBidi = false;
++
+         Bitmap bitmap;
+         std::vector<GridLineRange> gridLineRanges;
+         LineRendition lineRendition = LineRendition::SingleWidth;

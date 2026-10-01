@@ -1,0 +1,22 @@
+[package]
+name = "windowsterminal-rtl-patcher"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "WindowsTerminal-RTL-patcher"
+path = "src/main.rs"
+
+# No dependencies on purpose. The whole patcher is a few kilobytes of Win32: it
+# asks for elevation, drops the embedded script somewhere writable and runs it.
+# The patcher is the thing a user runs when their terminal is already broken, so
+# the fewer moving parts it has the better.
+[dependencies]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,232 @@
+﻿diff --git a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
+index 5f43308b8..11c5683f4 100644
+--- a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
++++ b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
+@@ -1,8 +1,18 @@
+-# Same as the official arm64-windows-static triplet
+-set(VCPKG_TARGET_ARCHITECTURE arm64)
+-set(VCPKG_CRT_LINKAGE static)
+-set(VCPKG_LIBRARY_LINKAGE static)
+-
+-# ...but with explicit platform toolset, so that future toolsets
+-# aren't automatically picked up (it defaults to the latest one).
+-set(VCPKG_PLATFORM_TOOLSET v145)
++# Same as the official arm64-windows-static triplet
++set(VCPKG_TARGET_ARCHITECTURE arm64)
++set(VCPKG_CRT_LINKAGE static)
++set(VCPKG_LIBRARY_LINKAGE static)
++
++# ...but with the platform toolset chosen explicitly, so the triplet does not
++# silently follow whatever is newest on the machine.
++#
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): upstream pins v145, i.e. Visual
++# Studio 2026 (microsoft/terminal#20225). WT_VCPKG_TOOLSET picks the toolset for
++# a given run; when it is unset the pin is dropped and vcpkg takes the latest one
++# the runner actually has. That keeps this file working on a VS 2022 image (v143)
++# and a VS 2026 one (v145) alike, and matches how src/common.build.pre.props:98
++# chooses PlatformToolset from VisualStudioVersion.
++if(DEFINED ENV{WT_VCPKG_TOOLSET} AND NOT "$ENV{WT_VCPKG_TOOLSET}" STREQUAL "")
++  set(VCPKG_PLATFORM_TOOLSET $ENV{WT_VCPKG_TOOLSET})
++  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{WT_VCPKG_TOOLSET}")
++endif()
+\ No newline at end of file
+diff --git a/dep/vcpkg-overlay-triplets/x64-windows-static.cmake b/dep/vcpkg-overlay-triplets/x64-windows-static.cmake
+index 2e4b4dca9..35a880296 100644
+--- a/dep/vcpkg-overlay-triplets/x64-windows-static.cmake
++++ b/dep/vcpkg-overlay-triplets/x64-windows-static.cmake
+@@ -3,6 +3,16 @@ set(VCPKG_TARGET_ARCHITECTURE x64)
+ set(VCPKG_CRT_LINKAGE static)
+ set(VCPKG_LIBRARY_LINKAGE static)
+ 
+-# ...but with explicit platform toolset, so that future toolsets
+-# aren't automatically picked up (it defaults to the latest one).
+-set(VCPKG_PLATFORM_TOOLSET v145)
++# ...but with the platform toolset chosen explicitly, so the triplet does not
++# silently follow whatever is newest on the machine.
++#
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): upstream pins v145, i.e. Visual
++# Studio 2026 (microsoft/terminal#20225). WT_VCPKG_TOOLSET picks the toolset for
++# a given run; when it is unset the pin is dropped and vcpkg takes the latest one
++# the runner actually has. That keeps this file working on a VS 2022 image (v143)
++# and a VS 2026 one (v145) alike, and matches how src/common.build.pre.props:98
++# chooses PlatformToolset from VisualStudioVersion.
++if(DEFINED ENV{WT_VCPKG_TOOLSET} AND NOT "$ENV{WT_VCPKG_TOOLSET}" STREQUAL "")
++  set(VCPKG_PLATFORM_TOOLSET $ENV{WT_VCPKG_TOOLSET})
++  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{WT_VCPKG_TOOLSET}")
++endif()
+\ No newline at end of file
+diff --git a/dep/vcpkg-overlay-triplets/x86-windows-static.cmake b/dep/vcpkg-overlay-triplets/x86-windows-static.cmake
+index bde2ad647..08eae1aad 100644
+--- a/dep/vcpkg-overlay-triplets/x86-windows-static.cmake
++++ b/dep/vcpkg-overlay-triplets/x86-windows-static.cmake
+@@ -3,6 +3,16 @@ set(VCPKG_TARGET_ARCHITECTURE x86)
+ set(VCPKG_CRT_LINKAGE static)
+ set(VCPKG_LIBRARY_LINKAGE static)
+ 
+-# ...but with explicit platform toolset, so that future toolsets
+-# aren't automatically picked up (it defaults to the latest one).
+-set(VCPKG_PLATFORM_TOOLSET v145)
++# ...but with the platform toolset chosen explicitly, so the triplet does not
++# silently follow whatever is newest on the machine.
++#
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): upstream pins v145, i.e. Visual
++# Studio 2026 (microsoft/terminal#20225). WT_VCPKG_TOOLSET picks the toolset for
++# a given run; when it is unset the pin is dropped and vcpkg takes the latest one
++# the runner actually has. That keeps this file working on a VS 2022 image (v143)
++# and a VS 2026 one (v145) alike, and matches how src/common.build.pre.props:98
++# chooses PlatformToolset from VisualStudioVersion.
++if(DEFINED ENV{WT_VCPKG_TOOLSET} AND NOT "$ENV{WT_VCPKG_TOOLSET}" STREQUAL "")
++  set(VCPKG_PLATFORM_TOOLSET $ENV{WT_VCPKG_TOOLSET})
++  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{WT_VCPKG_TOOLSET}")
++endif()
+\ No newline at end of file
+diff --git a/src/common.build.post.props b/src/common.build.post.props
+index 8f43c32f5..409aac057 100644
+--- a/src/common.build.post.props
++++ b/src/common.build.post.props
+@@ -129,4 +129,76 @@
+ 
+   <!-- For C++ projects, bring in the vcpkg targets at the end -->
+   <Import Project="$(VcpkgRoot)/scripts/buildsystems/msbuild/vcpkg.targets" Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
++
++  <!-- ===================================================================
++       LOCAL BUILD ADAPTATION (WindowsTerminal-RTL)
++
++       One workaround, guarded by a command-line flag so that dropping the flag
++       restores upstream behaviour exactly. It does not touch terminal code.
++
++       Do NOT disable the Store toolchain to get an unpackaged binary.
++       WindowsTerminal.vcxproj already sets ApplicationType="Windows Store",
++       WindowsStoreApp=true, WindowsAppContainer=false, _NoWinAPIFamilyApp=true and
++       _VC_Target_Library_Platform=Desktop, and cppwinrt.build.pre.props says what
++       that means: "we're not building a true universal app, we're building a
++       desktop application with xaml". The Store build is what makes the XAML
++       compiler, GeneratedFilesDir, the UAP platform winmds and the include paths
++       for the generated XAML sources all resolve. Passing -p:WindowsStoreApp=false
++       or -p:ApplicationType= sets a *global* property, which beats the value in
++       the project, and every one of those then has to be re-created by hand.
++
++       The exception is MakePri.exe: this machine's Windows SDK has no
++       References\10.0.26100.0\Windows.props and Platforms\, and winsdksetup.exe
++       refuses to repair an SDK it already believes is installed (exit 1001), so
++       the probe for MakePri - a tool only the PRI/MSIX pipeline needs - fails with
++       APPX3217 / MSB4044 "MakePriExeFullPath". Supply the path and skip the probe.
++       MSBuild keeps the last definition of a target name, and this file is
++       imported after the Appx targets, so ours wins.
++       =================================================================== -->
++  <Target Name="_GetSdkToolsPathsFromSdk"
++          Condition="'$(LocalBuildSkipAppxSdkToolProbe)'=='true'">
++    <PropertyGroup>
++      <MakePriExeFullPath Condition="'$(MakePriExeFullPath)'==''">$(WindowsSdkDir)bin\10.0.26100.0\$(Platform)\makepri.exe</MakePriExeFullPath>
++      <MakePriArchitecture Condition="'$(MakePriArchitecture)'==''">$(Platform)</MakePriArchitecture>
++    </PropertyGroup>
++  </Target>
++
++  <Target Name="_GetAppxManifestSchemaItemsFromSdk"
++          Condition="'$(LocalBuildSkipAppxSdkToolProbe)'=='true'" />
++
++
++
++<!-- (2b) Explicit link/lib target machine.
++       The Store platform props that normally pin %(Link.TargetMachine) live at
++         VC\v170\Application Type\Windows Store\10.0\Platforms\<arch>\
++       and are reached through $(_PlatformFolder). For a project that sets
++       OpenConsoleUniversalApp=true (so AppContainerApplication=true), that chain
++       does not resolve here and the machine type is never set, which shows up as
++       "warning LNK4068: /MACHINE not specified; defaulting to X86" followed by
++       "fatal error LNK1112: module machine type 'x64' conflicts with target
++       machine type 'x86'" on the first x64 object.
++
++       Same '== ''' guard the SDK's own Platform.Common.props uses, so if it ever
++       does resolve, this stays inert. -->
++  <PropertyGroup Condition="'$(LocalBuildExplicitTargetMachine)'=='true'">
++    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='x64'">MachineX64</_LocalTargetMachine>
++    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='ARM64'">MachineARM64</_LocalTargetMachine>
++    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='ARM'">MachineARM</_LocalTargetMachine>
++    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='Win32'">MachineX86</_LocalTargetMachine>
++  </PropertyGroup>
++
++  <ItemDefinitionGroup Condition="'$(LocalBuildExplicitTargetMachine)'=='true'">
++    <Link Condition="'$(_LocalTargetMachine)'!=''">
++      <TargetMachine Condition="'%(TargetMachine)'==''">$(_LocalTargetMachine)</TargetMachine>
++    </Link>
++    <Lib Condition="'$(_LocalTargetMachine)'!=''">
++      <TargetMachine Condition="'%(TargetMachine)'==''">$(_LocalTargetMachine)</TargetMachine>
++    </Lib>
++    <ImpLib Condition="'$(_LocalTargetMachine)'!=''">
++      <TargetMachine Condition="'%(TargetMachine)'==''">$(_LocalTargetMachine)</TargetMachine>
++    </ImpLib>
++  </ItemDefinitionGroup>
++
++
++
+ </Project>
+diff --git a/src/common.build.pre.props b/src/common.build.pre.props
+index b726c916f..1ddf9283b 100644
+--- a/src/common.build.pre.props
++++ b/src/common.build.pre.props
+@@ -134,6 +134,17 @@
+         C26494: Variable 'index' is uninitialized. Always initialize an object (type. 5).
+           This diagnostic is broken in VS 17.7 which our CI currently uses. It's fixed in 17.8.
+       -->
++      <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL):
++           MSVC 19.44 (VS 2022 17.14) is newer than the toolset this branch is
++           pinned to and emits diagnostics that the existing upstream code
++           deliberately triggers. /WX then turns them into errors. All are
++           pre-existing upstream code, unrelated to the RTL change:
++             C4706: assignment used as a condition   (TerminalSelection.cpp:269)
++             C4245: signed/unsigned mismatch on `return E_FAIL` (AzureConnection.cpp:457)
++             C4456: a declaration hides a previous local (TextMenuFlyout.cpp)
++              C4458: a declaration hides a class member      (VsSetupConfiguration.h:182)
++           Guarded so upstream behaviour is restored by default. -->
++      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true'">4245;4706;4456;4458;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+       <DisableSpecificWarnings>4201;4312;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+       <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+       <SDLCheck>true</SDLCheck>
+@@ -265,6 +276,46 @@
+ 
+   <Import Project="$(MSBuildThisFileDirectory)..\build\rules\Branding.targets" />
+ 
++  <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): de-duplicate @(ReferencePath)
++       before the XAML compiler sees it.
++
++       MarkupCompilePass1 passes @(ReferencePath) straight to the XAML compiler as
++       its reference assemblies. In this tree that list contains the same file
++       more than once: a winmd that is named both by an explicit
++       <Reference Include="..."><IsWinMDFile>true</IsWinMDFile> item and by a
++       ProjectReference arrives twice, once with IsWinMDFile set and once
++       without. Microsoft.Terminal.Settings.Editor is the project where this
++       actually bites, because two *different* files there share the assembly
++       simple name Microsoft.Terminal.Control:
++
++         bin\<plat>\<cfg>\Microsoft.Terminal.Control\Microsoft.Terminal.Control.winmd
++         bin\<plat>\<cfg>\Microsoft.Terminal.Control.Lib\Microsoft.Terminal.Control.winmd
++
++       Anything the compiler keys off that name then resolves inconsistently, and
++       the failure surfaces as an internal .NET exception rather than something
++       actionable:
++
++         Microsoft.Windows.UI.Xaml.Common.targets(354,5): Xaml Internal Error
++         error WMC9999: Value cannot be null. Parameter name: name
++
++       Removing the repeats is not observable to the C++ side: KeepDuplicates
++       keeps the original items, so every piece of metadata on the survivors
++       (WinMDFile, LinkLibraryDependencies, ...) is carried over untouched. The
++       set of distinct reference assemblies is exactly what it was.
++
++       Set -p:LocalBuildTrimDuplicateRefs=false to get upstream's behaviour back. -->
++  <Target Name="LocalBuildTrimDuplicateReferencePaths"
++          BeforeTargets="MarkupCompilePass1"
++          Condition="'$(LocalBuildTrimDuplicateRefs)'!='false'">
++    <ItemGroup>
++      <_LocalBuildUniqueRef Include="@(ReferencePath)" KeepDuplicates="false" />
++    </ItemGroup>
++    <ItemGroup Condition="'@(ReferencePath)'!=''">
++      <ReferencePath Remove="@(ReferencePath)" />
++      <ReferencePath Include="@(_LocalBuildUniqueRef)" />
++    </ItemGroup>
++  </Target>
++
+   <PropertyGroup Label="vcpkg">
+     <VcpkgEnableManifest>true</VcpkgEnableManifest>
+ 

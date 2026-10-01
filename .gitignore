@@ -1,0 +1,18 @@
+# Build output
+artifacts/
+packaged/
+*.zip
+
+# Rust
+patcher/target/
+**/target/
+
+# Windows
+*.pdb
+*.ipdb
+Thumbs.db
+desktop.ini
+
+# The upstream tree is cloned by scripts/build-portable.ps1, never committed
+terminal/
+vcpkg/
