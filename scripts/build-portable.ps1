@@ -103,18 +103,27 @@ try {
 $vcpkg = Join-Path $WorkDir 'vcpkg'
 Write-Host "[build] restoring vcpkg"
 
-# Full history, no blobs. Not --depth 1: vcpkg's InstallImplementation.targets
-# runs `git --git-dir <this repo> read-tree <sha>` against the vcpkg repository,
-# so it needs arbitrary historical trees to be present. A shallow clone fails
-# that with exit code 128 and the error surfaces as a build failure. --filter
-# keeps it affordable because read-tree wants trees, not file contents.
-& git clone --filter=blob:none https://github.com/microsoft/vcpkg.git $vcpkg
+# vcpkg.json pins builtin-baseline, and vcpkg reads versions/baseline.json out of
+# that exact commit. A --depth 1 clone does not contain it, so fetch just that one
+# on top rather than paying for vcpkg's whole history.
+#
+# Do not substitute --filter=blob:none to save the transfer. It trades one
+# failure for another: read-tree in InstallImplementation.targets wants tree
+# objects and is satisfied, but checkout-index then wants blob contents, which a
+# blobless clone does not have, and it exits 128 instead.
+$manifest = Get-Content (Join-Path $src 'vcpkg.json') -Raw | ConvertFrom-Json
+& git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
 if ($LASTEXITCODE -ne 0) { throw "cloning vcpkg failed" }
+if ($manifest.'builtin-baseline') {
+    Write-Host "[build] vcpkg baseline : $($manifest.'builtin-baseline')"
+    & git -C $vcpkg fetch --depth 1 origin $manifest.'builtin-baseline'
+}
 & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
 
 # Install the dependencies up front, as its own step. Left to msbuild, the same
 # work happens mid-build where a failed dependency restore is indistinguishable
 # from a failed compile.
+# From inside the clone, so the manifest and the overlay triplets are found.
 $triplet = "$Arch-windows-static"
 Write-Host "[build] vcpkg install ($triplet)"
 Push-Location $src
