@@ -24,13 +24,18 @@ jobs:
             arch: x64
             asset: WindowsTerminal-RTL-x64
             patcher: WindowsTerminal-RTL-patcher-x64.exe
-          # Windows on ARM. Best effort: an ARM failure must never stop the x64
-          # assets from being published.
+          # Windows on ARM.
+          #
+          # Deliberately not best-effort. An earlier run had
+          # continue-on-error on the build step: the terminal failed to build on
+          # both legs, the ARM job still reported green, and it took reading the
+          # x64 log to notice. publish runs with if: always(), so x64 assets are
+          # safe without it, and a build that cannot produce a terminal should
+          # be a red build.
           - os: windows-11-arm
             arch: arm64
             asset: WindowsTerminal-RTL-arm64
             patcher: WindowsTerminal-RTL-patcher-arm64.exe
-            best_effort: 'true'
 
     env:
       # vcpkg resolves versions from git; the CLI fetch is far more reliable
@@ -53,7 +58,6 @@ jobs:
       # fits the cell grid.
       - name: Run the DirectWrite probes
         shell: cmd
-        continue-on-error: ${{ matrix.best_effort == 'true' }}
         run: |
           mkdir artifacts
           cd tools\bidi-probe
@@ -65,7 +69,6 @@ jobs:
 
       - name: Build the portable terminal
         shell: pwsh
-        continue-on-error: ${{ matrix.best_effort == 'true' }}
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           & powershell -ExecutionPolicy Bypass -File scripts\build-portable.ps1 `
@@ -76,7 +79,6 @@ jobs:
       # same architecture and comes out a couple of hundred kilobytes.
       - name: Build the patcher
         shell: pwsh
-        continue-on-error: ${{ matrix.best_effort == 'true' }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
@@ -113,7 +115,7 @@ jobs:
         with:
           name: out-${{ matrix.arch }}
           path: artifacts/*
-          if-no-files-found: ${{ matrix.best_effort == 'true' && 'warn' || 'error' }}
+          if-no-files-found: error
 
   # One publishing job, so the ARM build cannot race the x64 one into the same
   # release.

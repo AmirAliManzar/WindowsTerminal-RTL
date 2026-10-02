@@ -1,4 +1,4 @@
-﻿diff --git a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
+diff --git a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
 index 5f43308b8..11c5683f4 100644
 --- a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
 +++ b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake

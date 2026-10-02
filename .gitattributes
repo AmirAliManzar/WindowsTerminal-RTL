@@ -1,0 +1,19 @@
+# Upstream commits a mix of line endings: the vcpkg overlay triplets are LF, the
+# .cpp and .props files are CRLF. `git apply` matches hunk context byte for byte,
+# so a patch has to reach the build exactly as git produced it.
+#
+# This matters more than it looks. With core.autocrlf=true, which is the default
+# on Windows and what the runner image ships, `git add` silently strips every CR
+# from a patch file. The result still looks like a patch and still contains all
+# the right lines, but applying it fails with "patch does not apply" against
+# every CRLF file it touches. That is not a guess - it is how the first release
+# build failed, on both architectures at once.
+#
+# Upstream protects its own tree the same way, with `* -text` in its
+# .gitattributes. Do the same here, for the directory that records upstream's
+# bytes.
+patch/** -text
+
+# Binary assets should never be touched either.
+*.zip -text
+*.exe -text

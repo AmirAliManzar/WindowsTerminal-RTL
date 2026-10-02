@@ -53,6 +53,16 @@ New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 $src = Join-Path $WorkDir 'terminal'
 Write-Host "[build] cloning microsoft/terminal"
 & git clone --filter=blob:none --no-checkout https://github.com/microsoft/terminal.git $src
+
+# Set before checkout, deliberately. Upstream commits a mix of line endings -
+# the vcpkg overlay triplets are LF while the .cpp and .props files are CRLF - and
+# the patch carries each file's context with the endings upstream actually used.
+# Rewrite any of them on checkout and the patch stops matching, which is exactly
+# how this build failed once already. Upstream's .gitattributes says "* -text" so
+# nothing should be converted anyway, but core.autocrlf is the setting that could
+# do it silently, and it is whatever the runner image happens to default to.
+& git -C $src config core.autocrlf false
+& git -C $src config core.eol lf
 & git -C $src checkout $UpstreamRef
 
 # ---------------------------------------------------------------- patch

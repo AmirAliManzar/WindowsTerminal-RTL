@@ -1,4 +1,4 @@
-﻿diff --git a/src/renderer/atlas/AtlasEngine.cpp b/src/renderer/atlas/AtlasEngine.cpp
+diff --git a/src/renderer/atlas/AtlasEngine.cpp b/src/renderer/atlas/AtlasEngine.cpp
 index 727f01012..970b08618 100644
 --- a/src/renderer/atlas/AtlasEngine.cpp
 +++ b/src/renderer/atlas/AtlasEngine.cpp
@@ -10,7 +10,7 @@ index 727f01012..970b08618 100644
 +// that have to agree with it.
 +//
 +// false (the default here) means the words stay in the order they were typed:
-+// typing "╪│┘ä╪º┘à ╪«┘ê╪¿█î╪ƒ" after a prompt shows the words in that same order, left to
++// typing "سلام خوبی؟" after a prompt shows the words in that same order, left to
 +// right, with the shaping and joining still done properly. Setting it true gives
 +// Unicode bidi rule L2, so the first logical word ends up on the right and you
 +// read the line right to left - what a browser, Word and VS Code do.
@@ -24,8 +24,8 @@ index 727f01012..970b08618 100644
 +//      right, so if the cluster order stays in typed order while the placements
 +//      are RTL, every letter lands in the wrong cell.
 +//
-+// Turning off only (1) produced exactly that: "╪│┘ä╪º┘à ╪«┘ê╪¿█î╪ƒ" came out as
-+// "╪ƒ█îΓÇî╪¿┘ê╪«┘Ç ┘àΓÇî╪º┘ä╪│", with the question mark jumping to the far left.
++// Turning off only (1) produced exactly that: "سلام خوبی؟" came out as
++// "؟ی‌بوخـ م‌الس", with the question mark jumping to the far left.
 +static constexpr bool BidiUnicodeWordOrder = true;
 +
  #pragma warning(suppress : 26455) // Default constructor may not throw. Declare it 'noexcept' (f.6).
@@ -152,7 +152,7 @@ index 727f01012..970b08618 100644
 +
 +    // Unicode bidi rule L2: from the highest level down to the lowest odd one,
 +    // reverse every contiguous sequence of clusters at or above that level.
-+    // For "hello ╪│┘ä╪º┘à" this flips only the Persian segment; for a fully Persian
++    // For "hello سلام" this flips only the Persian segment; for a fully Persian
 +    // line it flips the whole line.
 +    //
 +    // This is correct *because* IDWriteTextAnalyzer::GetGlyphs hands back the
@@ -386,7 +386,7 @@ index 727f01012..970b08618 100644
 +
 +    // AnalyzeBidi is the call that actually reports SetBidiLevel. AnalyzeScript
 +    // only reports SetScriptAnalysis - it never runs the bidi algorithm. Verified
-+    // empirically: for "╪│┘ä╪º┘à" AnalyzeScript alone yields 1 script run and 0 bidi
++    // empirically: for "سلام" AnalyzeScript alone yields 1 script run and 0 bidi
 +    // levels, so without this call every cluster would come back level 0 and L2
 +    // would never reorder anything.
 +    THROW_IF_FAILED(_p.textAnalyzer->AnalyzeBidi(&analysisSource, idx, length, &analysisSink));
@@ -411,7 +411,7 @@ index 727f01012..970b08618 100644
 +        // negative x, which only works if the clusters get reversed as well;
 +        // the renderer accumulates advances left to right. Asking for RTL
 +        // placements while keeping the typed word order scatters the letters -
-+        // "╪│┘ä╪º┘à ╪«┘ê╪¿█î╪ƒ" came out as "╪ƒ█îΓÇî╪¿┘ê╪«┘Ç ┘àΓÇî╪º┘ä╪│". See BidiUnicodeWordOrder.
++        // "سلام خوبی؟" came out as "؟ی‌بوخـ م‌الس". See BidiUnicodeWordOrder.
 +        const BOOL isRTL = (BidiUnicodeWordOrder && (level & 1)) ? TRUE : FALSE;
 +
          u32 actualGlyphCount = 0;
