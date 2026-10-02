@@ -98,30 +98,64 @@ try {
 
 # ---------------------------------------------------------------- dependencies
 
-# vcpkg.json pins builtin-baseline, and vcpkg reads versions/baseline.json out of
-# that exact commit. A shallow clone does not contain it, so fetch just that one.
+# ---------------------------------------------------------------- vcpkg
+
 $vcpkg = Join-Path $WorkDir 'vcpkg'
 Write-Host "[build] restoring vcpkg"
-& git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
-$manifest = Get-Content (Join-Path $src 'vcpkg.json') -Raw | ConvertFrom-Json
-if ($manifest.'builtin-baseline') {
-    & git -C $vcpkg fetch --depth 1 origin $manifest.'builtin-baseline'
-}
+
+# Full history, no blobs. Not --depth 1: vcpkg's InstallImplementation.targets
+# runs `git --git-dir <this repo> read-tree <sha>` against the vcpkg repository,
+# so it needs arbitrary historical trees to be present. A shallow clone fails
+# that with exit code 128 and the error surfaces as a build failure. --filter
+# keeps it affordable because read-tree wants trees, not file contents.
+& git clone --filter=blob:none https://github.com/microsoft/vcpkg.git $vcpkg
+if ($LASTEXITCODE -ne 0) { throw "cloning vcpkg failed" }
 & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+
+# Install the dependencies up front, as its own step. Left to msbuild, the same
+# work happens mid-build where a failed dependency restore is indistinguishable
+# from a failed compile.
+$triplet = "$Arch-windows-static"
+Write-Host "[build] vcpkg install ($triplet)"
+Push-Location $src
+try {
+    & "$vcpkg\vcpkg.exe" install --triplet $triplet
+    if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed with exit $LASTEXITCODE" }
+}
+finally { Pop-Location }
+
+# ---------------------------------------------------------------- NuGet
 
 # These projects use packages.config rather than PackageReference, so
 # `msbuild -t:restore` does not fetch them and every vcxproj fails with
-# "references NuGet package(s) that are missing on this computer". nuget.exe cannot
-# read the .slnx solution or the .slnf filter, so it is pointed at the
+# "references NuGet package(s) that are missing on this computer". nuget.exe
+# cannot read the .slnx solution or the .slnf filter, so it is pointed at the
 # packages.config files directly.
+#
+# Run from inside the clone. The root NuGet.Config sets globalPackagesFolder and
+# repositorypath to .\packages, and nuget resolves those relative paths against
+# the working directory - so invoked from anywhere else the packages land in the
+# default global folder and every project reports them missing.
 Write-Host "[build] restoring NuGet packages"
 $nuget = (Get-Command nuget -ErrorAction SilentlyContinue).Source
 if (-not $nuget) {
     $nuget = Join-Path $WorkDir 'nuget.exe'
     Invoke-WebRequest https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -OutFile $nuget
 }
-& $nuget restore (Join-Path $src 'dep\nuget\packages.config') -NonInteractive
-& $nuget restore (Join-Path $src 'build\packages.config') -NonInteractive
+
+# Named rather than inferred, on top of running from inside the clone: two
+# independent ways for the destination to be what the projects expect.
+$packages = Join-Path $src 'packages'
+Push-Location $src
+try {
+    foreach ($cfg in 'dep\nuget\packages.config', 'build\packages.config', '.nuget\packages.config') {
+        if (-not (Test-Path -LiteralPath $cfg)) { continue }
+        Write-Host "  $cfg"
+        & $nuget restore $cfg -NonInteractive -PackagesDirectory $packages
+        if ($LASTEXITCODE -ne 0) { throw "nuget restore failed for $cfg" }
+    }
+}
+finally { Pop-Location }
 
 # ---------------------------------------------------------------- build
 
