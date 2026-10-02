@@ -32,7 +32,7 @@
     powershell -ExecutionPolicy Bypass -File .\patch-wt.ps1 -Revert
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [switch] $Revert,
     [string] $LocalDir,
@@ -65,6 +65,26 @@ function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     (New-Object Security.Principal.WindowsPrincipal $id).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Unlock-Target {
+    param([string] $Path)
+
+    # Program Files\WindowsApps is owned by TrustedInstaller, and Administrator
+    # does not imply the right to write there. Being an administrator is only
+    # half the permission; the file also has to be ours to write. Without these
+    # two calls the copy below fails with "access denied" even from an elevated
+    # prompt, which looks like a bug in this script rather than a permissions
+    # fact about the Store.
+    & takeown.exe /F $Path /A | Out-Null
+    & icacls.exe $Path /grant '*S-1-5-32-544:F' | Out-Null
+}
+
+function Write-File {
+    param([string] $Source, [string] $Destination)
+
+    Unlock-Target -Path $Destination
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
 
 function Get-InstallPath {
@@ -120,7 +140,7 @@ if ($Revert) {
     Stop-Terminal
     Write-Host "restoring from $backup"
     Get-ChildItem -LiteralPath $backup -Filter *.dll | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $install $_.Name) -Force
+        Write-File -Source $_.FullName -Destination (Join-Path $install $_.Name)
         Write-Host "  $($_.Name)"
     }
     if (-not $NoRestart) { Start-Terminal }
@@ -130,14 +150,11 @@ if ($Revert) {
 
 # ---------------------------------------------------------------- patch
 
-if (-not (Test-Admin)) {
-    throw "this needs administrator rights. Right-click the patcher, or run:
-    powershell -ExecutionPolicy Bypass -File .\patch-wt.ps1  (from an admin prompt)"
-}
+# Elevation is checked further down, once there is something to write. Planning
+# the replacement needs no privileges, so -WhatIf has to work without them.
 
 $install = Get-InstallPath
 $backup = Get-BackupDir $install
-New-Item -ItemType Directory -Force -Path $backup | Out-Null
 
 # Where do the replacement DLLs come from?
 $source = $LocalDir
@@ -167,6 +184,32 @@ if ($missing) {
     Write-Warning "not in the source folder, skipped: $($missing -join ', ')"
 }
 
+# Show exactly what is about to change, with both sizes, so a substitution that
+# turns out to be wrong is visible before anything is written.
+Write-Host "file plan:"
+foreach ($f in $planned) {
+    $s = (Get-Item -LiteralPath $f.src).Length
+    $d = (Get-Item -LiteralPath $f.dst).Length
+    $flag = if ($s -eq $d) { 'same size' } else { 'DIFFERENT SIZE' }
+    Write-Host ("  {0,-42} {1,10:N0} -> {2,10:N0}  {3}" -f $f.name, $d, $s, $flag)
+}
+Write-Host ""
+
+if (-not $PSCmdlet.ShouldProcess($install, 'Replace the listed files')) {
+    Write-Host 'Nothing was changed. Re-run without -WhatIf to apply.'
+    exit 0
+}
+
+# Only now, with the plan settled and the user committed to it, does anything
+# get written - and writing into WindowsApps needs the file to be ours as well
+# as the process being elevated.
+if (-not (Test-Admin)) {
+    throw "this needs administrator rights. Right-click the patcher exe, or run:
+    powershell -ExecutionPolicy Bypass -File .\patch-wt.ps1  (from an admin prompt)"
+}
+
+New-Item -ItemType Directory -Force -Path $backup | Out-Null
+
 # Back up once, and only the first time, so a second run cannot overwrite the
 # original with an already patched file.
 foreach ($f in $planned) {
@@ -177,26 +220,51 @@ foreach ($f in $planned) {
     }
 }
 Write-Host "backup      : $backup"
+Write-Host ""
 
 Stop-Terminal
 
 $applied = @()
 try {
     foreach ($f in $planned) {
-        Copy-Item -LiteralPath $f.src -Destination $f.dst -Force
+        Write-File -Source $f.src -Destination $f.dst
         Write-Host "  patched $($f.name)"
         $applied += $f
     }
 }
 catch {
     Write-Warning "copy failed: $($_.Exception.Message)"
-    Write-Host "rolling back"
+    Write-Host "rolling back the $($applied.Count) file(s) already written"
     foreach ($f in $applied) {
-        Copy-Item -LiteralPath (Join-Path $backup $f.name) -Destination $f.dst -Force
-        Write-Host "  restored $($f.name)"
+        try {
+            Write-File -Source (Join-Path $backup $f.name) -Destination $f.dst
+            Write-Host "  restored $($f.name)"
+        }
+        catch {
+            Write-Warning "could not restore $($f.name): $($_.Exception.Message)"
+        }
+    }
+    if ($applied.Count -gt 0) {
+        Write-Host ""
+        Write-Host "The install is in a mixed state. Finish with:"
+        Write-Host "  .\WindowsTerminal-RTL-patcher.exe -Revert"
     }
     throw
 }
+
+# A record of what this install now consists of, so it is answerable later
+# without re-deriving it: which files were replaced, and what the original
+# bytes were.
+@{
+    install        = $install
+    packageVersion = "$(try { (Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1).Version } catch { $null })"
+    patchedUtc     = (Get-Date).ToUniversalTime().ToString('s')
+    sourceDir      = $source
+    backupDir      = $backup
+    files          = @($applied | ForEach-Object {
+        @{ name = $_.name; original = (Get-Item -LiteralPath (Join-Path $backup $_.name)).Length; patched = (Get-Item -LiteralPath $_.src).Length }
+    })
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $backup 'manifest.json') -Encoding UTF8
 
 Write-Host ""
 Write-Host "patched $($applied.Count) file(s)."
