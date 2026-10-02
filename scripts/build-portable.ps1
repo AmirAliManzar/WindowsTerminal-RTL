@@ -100,24 +100,23 @@ try {
 
 # ---------------------------------------------------------------- vcpkg
 
-$vcpkg = Join-Path $WorkDir 'vcpkg'
-Write-Host "[build] restoring vcpkg"
-
-# vcpkg.json pins builtin-baseline, and vcpkg reads versions/baseline.json out of
-# that exact commit. A --depth 1 clone does not contain it, so fetch just that one
-# on top rather than paying for vcpkg's whole history.
+# A full clone, and not a cheaper one. Both alternatives were tried and both fail:
 #
-# Do not substitute --filter=blob:none to save the transfer. It trades one
-# failure for another: read-tree in InstallImplementation.targets wants tree
-# objects and is satisfied, but checkout-index then wants blob contents, which a
-# blobless clone does not have, and it exits 128 instead.
-$manifest = Get-Content (Join-Path $src 'vcpkg.json') -Raw | ConvertFrom-Json
-& git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
+#   --depth 1          read-tree <sha> exits 128, "failed to unpack tree object"
+#   --filter=blob:none read-tree is satisfied but checkout-index exits 128
+#
+# vcpkg's msbuild integration pulls port implementations out of its own history
+# with `git --git-dir <vcpkg> read-tree <sha>`, so the clone has to be able to
+# serve any historical tree. It also extracts files with checkout-index, so it
+# needs blobs. A full clone is the only clone that does both.
+#
+# The earlier successful CI run used --depth 1 and got away with it, which is not
+# evidence that it works: it simply had not reached a port that needed a tree it
+# did not have. That recipe then failed once it did.
+$vcpkg = Join-Path $WorkDir 'vcpkg'
+Write-Host "[build] cloning vcpkg (full history)"
+& git clone https://github.com/microsoft/vcpkg.git $vcpkg
 if ($LASTEXITCODE -ne 0) { throw "cloning vcpkg failed" }
-if ($manifest.'builtin-baseline') {
-    Write-Host "[build] vcpkg baseline : $($manifest.'builtin-baseline')"
-    & git -C $vcpkg fetch --depth 1 origin $manifest.'builtin-baseline'
-}
 & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
 
 # Install the dependencies up front, as its own step. Left to msbuild, the same
