@@ -126,19 +126,37 @@ if (-not $nuget) {
 # ---------------------------------------------------------------- build
 
 $platform = if ($Arch -eq 'arm64') { 'ARM64' } else { 'x64' }
+# Every path from here on is resolved by msbuild against the process working
+# directory, so the working directory is part of the build rather than incidental
+# to it. Getting it wrong does not say so: it surfaces as MSB5026, a complaint
+# about a solution file, which points at the wrong thing entirely.
+$expect = @(
+    (Join-Path $src 'WindowsTerminal.slnf'),
+    (Join-Path $src 'OpenConsole.slnx'),
+    (Join-Path $src 'src\cascadia\WindowsTerminal\WindowsTerminal.vcxproj'),
+    (Join-Path $src 'dep\package-portable.ps1')
+)
+$absent = @($expect | Where-Object { -not (Test-Path -LiteralPath $_) })
+if ($absent) {
+    foreach ($a in $absent) { Write-Host "  missing: $a" }
+    throw "the upstream tree at $src is incomplete - $($absent.Count) file(s) missing"
+}
+Write-Host "[build] work dir    : $src"
+Write-Host ""
 
 $msbuildArgs = @(
+    # Relative on purpose: the block runs from inside the clone.
     'WindowsTerminal.slnf',
     '-t:Build',
-    "-p:Configuration=Release",
+    '-p:Configuration=Release',
     "-p:Platform=$platform",
     "-p:SolutionDir=$src\",
     '-p:PgoTarget=false',
     "-p:VcpkgRoot=$vcpkg\",
     '-p:VcpkgEnabled=true',
     # The unpackaged build must keep the Store toolchain on; see
-    # patch/build-unpackaged.patch for why overriding these breaks the XAML
-    # compiler outright.
+    # patch/build-unpackaged.patch for why overriding those two properties
+    # disables the XAML compiler outright.
     '-p:LocalBuildSkipAppxSdkToolProbe=true',
     '-p:LocalBuildExplicitTargetMachine=true',
     '-p:LocalBuildDisableNewerMsvcWarnings=true',
@@ -153,8 +171,13 @@ $msbuildArgs = @(
 
 Write-Host "[build] building ($platform)"
 $env:CL = '/MP1'
-& msbuild @msbuildArgs
-if ($LASTEXITCODE -ne 0) { throw "build failed with exit $LASTEXITCODE" }
+
+Push-Location $src
+try {
+    & msbuild @msbuildArgs
+    if ($LASTEXITCODE -ne 0) { throw "build failed with exit $LASTEXITCODE" }
+}
+finally { Pop-Location }
 
 # ---------------------------------------------------------------- package
 
@@ -165,14 +188,25 @@ if (-not $SkipPacker) {
     # That target is gated on BuildingInsideVisualStudio and so never runs in a
     # command-line build; call it explicitly rather than guessing at a file list.
     Write-Host "[build] preparing the unpackaged layout"
-    & msbuild 'src\cascadia\WindowsTerminal\WindowsTerminal.vcxproj' `
-        '-t:_WTPrepareUnpackagedLayoutForRun' `
-        '-p:Configuration=Release' "-p:Platform=$platform" "-p:SolutionDir=$src\" `
-        '-p:PgoTarget=false' "-p:VcpkgRoot=$vcpkg\" '-p:VcpkgEnabled=true' `
-        '-p:LocalBuildSkipAppxSdkToolProbe=true' '-p:LocalBuildExplicitTargetMachine=true' `
-        '-p:LocalBuildDisableNewerMsvcWarnings=true' '-p:TreatWarningAsError=false' `
-        '-m:1' '-nr:false' '-v:minimal' '-nologo'
-    if ($LASTEXITCODE -ne 0) { throw 'preparing the unpackaged layout failed' }
+
+    Push-Location $src
+    try {
+        & msbuild 'src\cascadia\WindowsTerminal\WindowsTerminal.vcxproj' `
+            '-t:_WTPrepareUnpackagedLayoutForRun' `
+            '-p:Configuration=Release' `
+            "-p:Platform=$platform" `
+            "-p:SolutionDir=$src\" `
+            '-p:PgoTarget=false' `
+            "-p:VcpkgRoot=$vcpkg\" `
+            '-p:VcpkgEnabled=true' `
+            '-p:LocalBuildSkipAppxSdkToolProbe=true' `
+            '-p:LocalBuildExplicitTargetMachine=true' `
+            '-p:LocalBuildDisableNewerMsvcWarnings=true' `
+            '-p:TreatWarningAsError=false' `
+            '-m:1' '-nr:false' '-v:minimal' '-nologo'
+        if ($LASTEXITCODE -ne 0) { throw 'preparing the unpackaged layout failed' }
+    }
+    finally { Pop-Location }
 
     $dest = Join-Path $OutDir "WindowsTerminal-RTL-$Arch"
     Write-Host "[build] packaging to $dest"
