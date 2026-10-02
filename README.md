@@ -204,8 +204,9 @@ subject to its license terms.
 ## Contributors
 
 - AmirAliManzar
+- Claude
 
-The RTL patch under `patch/` was written with AI assistance.
+The RTL patch under `patch/` was written with AI assistance from Claude.
 
 ---
 
@@ -277,3 +278,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1 -Arch x64
 ### مجوز
 
 Windows Terminal تحت مجوز MIT منتشر شده و متن آن در `LICENSE` موجود است. فایل‌های باینری داخل ریلیز، نسخهٔ تغییرکردهٔ Windows Terminal هستند و تابع همان مجوز می‌مانند.
+
+### مشارکت‌کنندگان
+
+- AmirAliManzar
+- Claude
+
+پچ راست‌به‌چپ در `patch/` با کمک Claude نوشته شده است.
