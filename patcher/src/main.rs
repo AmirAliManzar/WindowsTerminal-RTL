@@ -16,6 +16,10 @@
 //!                                                        of downloading them
 //!     WindowsTerminal-RTL-patcher.exe -PackageDir <path> patch an install elsewhere
 //!     WindowsTerminal-RTL-patcher.exe -NoRestart         do not relaunch the terminal
+//!
+//! The exe passes -RequiredVersion automatically. It will not patch a Windows
+//! Terminal of any other version: the renderer is C++ with no ABI between
+//! releases, so mismatched DLLs corrupt the install rather than patch it.
 
 use std::ffi::OsStr;
 use std::io::Write;
@@ -43,6 +47,11 @@ compile_error!("the patcher only exists for Windows");
 /// exe and the repository can never disagree about what it does.
 const PS1: &str = include_str!("../../scripts/patch-wt.ps1");
 
+/// The Windows Terminal version the bundled DLLs were built from, baked in the
+/// same way. The script refuses to patch any other version unless -Force is
+/// given, because the renderer has no stable ABI across versions.
+const REQUIRED_VERSION: &str = include_str!("../../REQUIRED_VERSION");
+
 fn wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
 }
@@ -61,7 +70,20 @@ fn pause() {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Supply the version the bundled DLLs were built for unless the caller
+    // already named one. Trimmed: the file on disk ends with a newline, and
+    // PowerShell would then see "1.24.11911.0\n" and not match anything.
+    let required = REQUIRED_VERSION.trim();
+    if !required.is_empty()
+        && !args
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case("-RequiredVersion"))
+    {
+        args.push("-RequiredVersion".to_string());
+        args.push(required.to_string());
+    }
 
     if !is_admin() {
         println!("This patcher needs administrator rights.");

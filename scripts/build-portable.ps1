@@ -86,6 +86,13 @@ foreach ($f in Get-ChildItem (Join-Path $here 'tools\bidi-probe') -Filter *.cpp)
     New-Item -ItemType Directory -Force -Path (Join-Path $src 'tools\bidi-probe') | Out-Null
     Copy-Item $f.FullName (Join-Path $src "tools\bidi-probe\$($f.Name)") -Force
 }
+# The overlay triplets. These exist on main but not at v1.24.11911.0, so the
+# patch cannot add them - it can only modify what is already there. They have to
+# arrive as files, and they have to land before vcpkg runs, because the triplet
+# is what decides which toolset the dependencies are built against.
+foreach ($f in Get-ChildItem (Join-Path $here 'dep\vcpkg-overlay-triplets') -Filter *.cmake -ErrorAction SilentlyContinue) {
+    Copy-Item $f.FullName (Join-Path $src "dep\vcpkg-overlay-triplets\$($f.Name)") -Force
+}
 Copy-Item (Join-Path $here 'scripts\make-solution-filter.py') (Join-Path $src 'dep\make-solution-filter.py') -Force
 Copy-Item (Join-Path $here 'scripts\package-portable.ps1') (Join-Path $src 'dep\package-portable.ps1') -Force
 
@@ -123,11 +130,19 @@ if ($LASTEXITCODE -ne 0) { throw "cloning vcpkg failed" }
 # work happens mid-build where a failed dependency restore is indistinguishable
 # from a failed compile.
 # From inside the clone, so the manifest and the overlay triplets are found.
+#
+# --overlay-triplets is the same flag pre.props passes to msbuild: without it
+# vcpkg resolves <arch>-windows-static to its own built-in triplet and builds the
+# dependencies with whatever toolset is newest on the runner, which is newer than
+# the one this ref pins. Installing them up front with the same overlay keeps the
+# two paths agreeing, and the up-front install is the one that reports a real
+# error instead of a compile failure later.
 $triplet = "$Arch-windows-static"
+$overlay = Join-Path $src 'dep\vcpkg-overlay-triplets'
 Write-Host "[build] vcpkg install ($triplet)"
 Push-Location $src
 try {
-    & "$vcpkg\vcpkg.exe" install --triplet $triplet
+    & "$vcpkg\vcpkg.exe" install --triplet $triplet --overlay-triplets=$overlay
     if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed with exit $LASTEXITCODE" }
 }
 finally { Pop-Location }

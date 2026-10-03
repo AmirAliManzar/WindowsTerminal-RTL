@@ -1,90 +1,83 @@
 diff --git a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
-index 5f43308b8..11c5683f4 100644
---- a/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
+new file mode 100644
+index 000000000..3e91aff53
+--- /dev/null
 +++ b/dep/vcpkg-overlay-triplets/arm64-windows-static.cmake
-@@ -1,8 +1,18 @@
--# Same as the official arm64-windows-static triplet
--set(VCPKG_TARGET_ARCHITECTURE arm64)
--set(VCPKG_CRT_LINKAGE static)
--set(VCPKG_LIBRARY_LINKAGE static)
--
--# ...but with explicit platform toolset, so that future toolsets
--# aren't automatically picked up (it defaults to the latest one).
--set(VCPKG_PLATFORM_TOOLSET v145)
-+# Same as the official arm64-windows-static triplet
+@@ -0,0 +1,19 @@
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): a plain static triplet whose
++# platform toolset WT_VCPKG_TOOLSET can pin.
++#
++# This file does not exist at v1.24.11911.0; upstream added the overlay triplets
++# later, when it pinned v145 (microsoft/terminal#20225). Here pre.props still
++# pins v143, so the toolset the dependencies are built with has to be
++# controllable too, or a runner whose newest Visual Studio is newer than v143
++# builds the dependencies against a different toolset than the terminal itself.
++#
++# WT_VCPKG_TOOLSET is only consulted when set; when it is not, vcpkg picks the
++# latest toolset on the machine, which is what upstream wanted and what a local
++# build on a matching Visual Studio already gives you.
++if(DEFINED ENV{{WT_VCPKG_TOOLSET}} AND NOT "$ENV{{WT_VCPKG_TOOLSET}}" STREQUAL "")
++  set(VCPKG_PLATFORM_TOOLSET $ENV{{WT_VCPKG_TOOLSET}})
++  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{{WT_VCPKG_TOOLSET}}")
++endif()
 +set(VCPKG_TARGET_ARCHITECTURE arm64)
 +set(VCPKG_CRT_LINKAGE static)
 +set(VCPKG_LIBRARY_LINKAGE static)
-+
-+# ...but with the platform toolset chosen explicitly, so the triplet does not
-+# silently follow whatever is newest on the machine.
-+#
-+# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): upstream pins v145, i.e. Visual
-+# Studio 2026 (microsoft/terminal#20225). WT_VCPKG_TOOLSET picks the toolset for
-+# a given run; when it is unset the pin is dropped and vcpkg takes the latest one
-+# the runner actually has. That keeps this file working on a VS 2022 image (v143)
-+# and a VS 2026 one (v145) alike, and matches how src/common.build.pre.props:98
-+# chooses PlatformToolset from VisualStudioVersion.
-+if(DEFINED ENV{WT_VCPKG_TOOLSET} AND NOT "$ENV{WT_VCPKG_TOOLSET}" STREQUAL "")
-+  set(VCPKG_PLATFORM_TOOLSET $ENV{WT_VCPKG_TOOLSET})
-+  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{WT_VCPKG_TOOLSET}")
-+endif()
-\ No newline at end of file
 diff --git a/dep/vcpkg-overlay-triplets/x64-windows-static.cmake b/dep/vcpkg-overlay-triplets/x64-windows-static.cmake
-index 2e4b4dca9..35a880296 100644
---- a/dep/vcpkg-overlay-triplets/x64-windows-static.cmake
+new file mode 100644
+index 000000000..7e704e991
+--- /dev/null
 +++ b/dep/vcpkg-overlay-triplets/x64-windows-static.cmake
-@@ -3,6 +3,16 @@ set(VCPKG_TARGET_ARCHITECTURE x64)
- set(VCPKG_CRT_LINKAGE static)
- set(VCPKG_LIBRARY_LINKAGE static)
- 
--# ...but with explicit platform toolset, so that future toolsets
--# aren't automatically picked up (it defaults to the latest one).
--set(VCPKG_PLATFORM_TOOLSET v145)
-+# ...but with the platform toolset chosen explicitly, so the triplet does not
-+# silently follow whatever is newest on the machine.
+@@ -0,0 +1,19 @@
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): a plain static triplet whose
++# platform toolset WT_VCPKG_TOOLSET can pin.
 +#
-+# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): upstream pins v145, i.e. Visual
-+# Studio 2026 (microsoft/terminal#20225). WT_VCPKG_TOOLSET picks the toolset for
-+# a given run; when it is unset the pin is dropped and vcpkg takes the latest one
-+# the runner actually has. That keeps this file working on a VS 2022 image (v143)
-+# and a VS 2026 one (v145) alike, and matches how src/common.build.pre.props:98
-+# chooses PlatformToolset from VisualStudioVersion.
-+if(DEFINED ENV{WT_VCPKG_TOOLSET} AND NOT "$ENV{WT_VCPKG_TOOLSET}" STREQUAL "")
-+  set(VCPKG_PLATFORM_TOOLSET $ENV{WT_VCPKG_TOOLSET})
-+  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{WT_VCPKG_TOOLSET}")
++# This file does not exist at v1.24.11911.0; upstream added the overlay triplets
++# later, when it pinned v145 (microsoft/terminal#20225). Here pre.props still
++# pins v143, so the toolset the dependencies are built with has to be
++# controllable too, or a runner whose newest Visual Studio is newer than v143
++# builds the dependencies against a different toolset than the terminal itself.
++#
++# WT_VCPKG_TOOLSET is only consulted when set; when it is not, vcpkg picks the
++# latest toolset on the machine, which is what upstream wanted and what a local
++# build on a matching Visual Studio already gives you.
++if(DEFINED ENV{{WT_VCPKG_TOOLSET}} AND NOT "$ENV{{WT_VCPKG_TOOLSET}}" STREQUAL "")
++  set(VCPKG_PLATFORM_TOOLSET $ENV{{WT_VCPKG_TOOLSET}})
++  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{{WT_VCPKG_TOOLSET}}")
 +endif()
-\ No newline at end of file
++set(VCPKG_TARGET_ARCHITECTURE x64)
++set(VCPKG_CRT_LINKAGE static)
++set(VCPKG_LIBRARY_LINKAGE static)
 diff --git a/dep/vcpkg-overlay-triplets/x86-windows-static.cmake b/dep/vcpkg-overlay-triplets/x86-windows-static.cmake
-index bde2ad647..08eae1aad 100644
---- a/dep/vcpkg-overlay-triplets/x86-windows-static.cmake
+new file mode 100644
+index 000000000..30d42e065
+--- /dev/null
 +++ b/dep/vcpkg-overlay-triplets/x86-windows-static.cmake
-@@ -3,6 +3,16 @@ set(VCPKG_TARGET_ARCHITECTURE x86)
- set(VCPKG_CRT_LINKAGE static)
- set(VCPKG_LIBRARY_LINKAGE static)
- 
--# ...but with explicit platform toolset, so that future toolsets
--# aren't automatically picked up (it defaults to the latest one).
--set(VCPKG_PLATFORM_TOOLSET v145)
-+# ...but with the platform toolset chosen explicitly, so the triplet does not
-+# silently follow whatever is newest on the machine.
+@@ -0,0 +1,19 @@
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): a plain static triplet whose
++# platform toolset WT_VCPKG_TOOLSET can pin.
 +#
-+# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): upstream pins v145, i.e. Visual
-+# Studio 2026 (microsoft/terminal#20225). WT_VCPKG_TOOLSET picks the toolset for
-+# a given run; when it is unset the pin is dropped and vcpkg takes the latest one
-+# the runner actually has. That keeps this file working on a VS 2022 image (v143)
-+# and a VS 2026 one (v145) alike, and matches how src/common.build.pre.props:98
-+# chooses PlatformToolset from VisualStudioVersion.
-+if(DEFINED ENV{WT_VCPKG_TOOLSET} AND NOT "$ENV{WT_VCPKG_TOOLSET}" STREQUAL "")
-+  set(VCPKG_PLATFORM_TOOLSET $ENV{WT_VCPKG_TOOLSET})
-+  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{WT_VCPKG_TOOLSET}")
++# This file does not exist at v1.24.11911.0; upstream added the overlay triplets
++# later, when it pinned v145 (microsoft/terminal#20225). Here pre.props still
++# pins v143, so the toolset the dependencies are built with has to be
++# controllable too, or a runner whose newest Visual Studio is newer than v143
++# builds the dependencies against a different toolset than the terminal itself.
++#
++# WT_VCPKG_TOOLSET is only consulted when set; when it is not, vcpkg picks the
++# latest toolset on the machine, which is what upstream wanted and what a local
++# build on a matching Visual Studio already gives you.
++if(DEFINED ENV{{WT_VCPKG_TOOLSET}} AND NOT "$ENV{{WT_VCPKG_TOOLSET}}" STREQUAL "")
++  set(VCPKG_PLATFORM_TOOLSET $ENV{{WT_VCPKG_TOOLSET}})
++  message(STATUS "wt-rtl: VCPKG_PLATFORM_TOOLSET pinned to $ENV{{WT_VCPKG_TOOLSET}}")
 +endif()
-\ No newline at end of file
++set(VCPKG_TARGET_ARCHITECTURE x86)
++set(VCPKG_CRT_LINKAGE static)
++set(VCPKG_LIBRARY_LINKAGE static)
 diff --git a/src/common.build.post.props b/src/common.build.post.props
-index 8f43c32f5..ff6e28f8e 100644
+index ec143372f..5dedf4e00 100644
 --- a/src/common.build.post.props
 +++ b/src/common.build.post.props
-@@ -129,4 +129,97 @@
+@@ -116,4 +116,97 @@
  
    <!-- For C++ projects, bring in the vcpkg targets at the end -->
    <Import Project="$(VcpkgRoot)/scripts/buildsystems/msbuild/vcpkg.targets" Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
@@ -183,10 +176,10 @@ index 8f43c32f5..ff6e28f8e 100644
 +
  </Project>
 diff --git a/src/common.build.pre.props b/src/common.build.pre.props
-index b726c916f..1ddf9283b 100644
+index b3f57bf23..6891f54d1 100644
 --- a/src/common.build.pre.props
 +++ b/src/common.build.pre.props
-@@ -134,6 +134,17 @@
+@@ -136,6 +136,17 @@
          C26494: Variable 'index' is uninitialized. Always initialize an object (type. 5).
            This diagnostic is broken in VS 17.7 which our CI currently uses. It's fixed in 17.8.
        -->
@@ -198,16 +191,16 @@ index b726c916f..1ddf9283b 100644
 +             C4706: assignment used as a condition   (TerminalSelection.cpp:269)
 +             C4245: signed/unsigned mismatch on `return E_FAIL` (AzureConnection.cpp:457)
 +             C4456: a declaration hides a previous local (TextMenuFlyout.cpp)
-+              C4458: a declaration hides a class member      (VsSetupConfiguration.h:182)
++             C4458: a declaration hides a class member      (VsSetupConfiguration.h:182)
 +           Guarded so upstream behaviour is restored by default. -->
 +      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true'">4245;4706;4456;4458;%(DisableSpecificWarnings)</DisableSpecificWarnings>
-       <DisableSpecificWarnings>4201;4312;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+       <DisableSpecificWarnings>4201;4312;4467;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
        <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
-@@ -265,6 +276,46 @@
+@@ -267,6 +278,46 @@
+   </ItemDefinitionGroup>
  
    <Import Project="$(MSBuildThisFileDirectory)..\build\rules\Branding.targets" />
- 
 +  <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): de-duplicate @(ReferencePath)
 +       before the XAML compiler sees it.
 +
@@ -248,6 +241,20 @@ index b726c916f..1ddf9283b 100644
 +    </ItemGroup>
 +  </Target>
 +
+ 
    <PropertyGroup Label="vcpkg">
      <VcpkgEnableManifest>true</VcpkgEnableManifest>
+@@ -280,6 +331,13 @@
  
+     <VcpkgAdditionalInstallOptions>--x-feature=terminal</VcpkgAdditionalInstallOptions>
+     <VcpkgAdditionalInstallOptions Condition="'$(Configuration)'=='Fuzzing'">$(VcpkgAdditionalInstallOptions) --overlay-triplets=$(SolutionDir)\dep\vcpkg-overlay-triplets\fuzzing</VcpkgAdditionalInstallOptions>
++    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): the plain static triplets
++         this project adds next to the fuzzing ones. Without this line vcpkg
++         resolves x64-windows-static to its own built-in triplet and builds the
++         dependencies with whatever toolset is newest on the machine, which is
++         newer than the v143 pinned above; linking a v143 terminal against
++         dependencies built with a different toolset is not reliable. -->
++    <VcpkgAdditionalInstallOptions>$(VcpkgAdditionalInstallOptions) --overlay-triplets=$(SolutionDir)\dep\vcpkg-overlay-triplets</VcpkgAdditionalInstallOptions>
+     <!--
+       Since we link everything statically, we don't need to copy anything.
+       This saves running a powershell script for every project.

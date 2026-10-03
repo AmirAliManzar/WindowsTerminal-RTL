@@ -138,14 +138,6 @@ try
         }
     }
 
-    if (_api.invalidatedRows.empty() && _api.invalidatedCursorArea.empty() && !RequiresContinuousRedraw())
-    {
-        _api.invalidatedCursorArea = invalidatedAreaNone;
-        _api.invalidatedRows = invalidatedRowsNone;
-        _api.scrollOffset = 0;
-        return S_FALSE;
-    }
-
     _api.dirtyRect = {
         0,
         _api.invalidatedRows.start,
@@ -233,7 +225,7 @@ try
             auto dst = _p.colorBitmap.data() + dstOffset;
             const auto bytes = count * sizeof(u32);
 
-            for (size_t i = 0; i < 3; ++i)
+            for (size_t i = 0; i < 2; ++i)
             {
                 // Avoid bumping the colorBitmapGeneration unless necessary. This approx. further halves
                 // the (already small) GPU load. This could easily be replaced with some custom SIMD
@@ -383,7 +375,7 @@ CATCH_RETURN()
     return S_OK;
 }
 
-void AtlasEngine::_fillColorBitmap(const size_t y, const size_t x1, const size_t x2, const u32 fgColor, const u32 bgColor, const u32 ulColor) noexcept
+void AtlasEngine::_fillColorBitmap(const size_t y, const size_t x1, const size_t x2, const u32 fgColor, const u32 bgColor) noexcept
 {
     const auto bitmap = _p.colorBitmap.begin() + _p.colorBitmapRowStride * y;
     const auto shift = gsl::narrow_cast<u8>(_p.rows[y]->lineRendition != LineRendition::SingleWidth);
@@ -393,11 +385,10 @@ void AtlasEngine::_fillColorBitmap(const size_t y, const size_t x1, const size_t
     const u32 colors[] = {
         u32ColorPremultiply(bgColor),
         fgColor,
-        ulColor,
     };
 
     // This fills the color in the background bitmap, and then in the foreground bitmap.
-    for (size_t i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 2; ++i)
     {
         const auto color = colors[i];
 
@@ -459,7 +450,7 @@ try
     {
         const auto isFinalRow = y == hiEnd.y;
         const auto end = isFinalRow ? std::min(hiEnd.x, x2) : x2;
-        _fillColorBitmap(row, x1, end, fgColor, bgColor, fgColor);
+        _fillColorBitmap(row, x1, end, fgColor, bgColor);
 
         // Return early if we couldn't paint the whole region (either this was not the last row, or
         // it was the last row but the highlight ends outside of our x range.)
@@ -482,7 +473,7 @@ try
         const auto isEndInside = y == hiEnd.y && hiEnd.x <= x2;
         if (isStartInside && isEndInside)
         {
-            _fillColorBitmap(row, hiStart.x, static_cast<size_t>(hiEnd.x), fgColor, bgColor, fgColor);
+            _fillColorBitmap(row, hiStart.x, static_cast<size_t>(hiEnd.x), fgColor, bgColor);
             ++it;
         }
         else
@@ -491,7 +482,7 @@ try
             if (isStartInside)
             {
                 const auto start = std::max(x1, hiStart.x);
-                _fillColorBitmap(y, start, x2, fgColor, bgColor, fgColor);
+                _fillColorBitmap(y, start, x2, fgColor, bgColor);
             }
 
             break;
@@ -505,7 +496,7 @@ try
 }
 CATCH_RETURN()
 
-[[nodiscard]] HRESULT AtlasEngine::PaintBufferLine(std::span<const Cluster> clusters, til::point coord, const bool fTrimLeft) noexcept
+[[nodiscard]] HRESULT AtlasEngine::PaintBufferLine(std::span<const Cluster> clusters, til::point coord, const bool fTrimLeft, const bool lineWrapped) noexcept
 try
 {
     const auto y = gsl::narrow_cast<u16>(clamp<int>(coord.y, 0, _p.s->viewportCellCount.y - 1));
@@ -548,7 +539,7 @@ try
     }
 
     // Apply the current foreground and background colors to the cells
-    _fillColorBitmap(y, x, columnEnd, _api.currentForeground, _api.currentBackground, _api.currentUnderlineColor);
+    _fillColorBitmap(y, x, columnEnd, _api.currentForeground, _api.currentBackground);
 
     // Apply the highlighting colors to the highlighted cells
     RETURN_IF_FAILED(_drawHighlighted(_api.searchHighlights, y, x, columnEnd, highlightFg, highlightBg));
@@ -563,14 +554,14 @@ CATCH_RETURN()
 [[nodiscard]] HRESULT AtlasEngine::PaintBufferGridLines(const GridLineSet lines, const COLORREF gridlineColor, const COLORREF underlineColor, const size_t cchLine, const til::point coordTarget) noexcept
 try
 {
-    UNREFERENCED_PARAMETER(gridlineColor);
-    UNREFERENCED_PARAMETER(underlineColor);
     const auto shift = gsl::narrow_cast<u8>(_api.lineRendition != LineRendition::SingleWidth);
     const auto x = std::max(0, coordTarget.x - (_api.viewportOffset.x >> shift));
     const auto y = gsl::narrow_cast<u16>(clamp<til::CoordType>(coordTarget.y, 0, _p.s->viewportCellCount.y - 1));
     const auto from = gsl::narrow_cast<u16>(clamp<til::CoordType>(x << shift, 0, _p.s->viewportCellCount.x - 1));
     const auto to = gsl::narrow_cast<u16>(clamp<size_t>((x + cchLine) << shift, from, _p.s->viewportCellCount.x));
-    _p.rows[y]->gridLineRanges.emplace_back(lines, from, to);
+    const auto glColor = gsl::narrow_cast<u32>(gridlineColor) | 0xff000000;
+    const auto ulColor = gsl::narrow_cast<u32>(underlineColor) | 0xff000000;
+    _p.rows[y]->gridLineRanges.emplace_back(lines, glColor, ulColor, from, to);
     return S_OK;
 }
 CATCH_RETURN()
@@ -697,9 +688,7 @@ CATCH_RETURN()
 try
 {
     auto [fg, bg] = renderSettings.GetAttributeColorsWithAlpha(textAttributes);
-    auto ul = renderSettings.GetAttributeUnderlineColor(textAttributes);
     fg |= 0xff000000;
-    ul |= 0xff000000;
     bg |= _api.backgroundOpaqueMixin;
 
     if (!isSettingDefaultBrushes)
@@ -715,7 +704,6 @@ try
 
         _api.currentBackground = gsl::narrow_cast<u32>(bg);
         _api.currentForeground = gsl::narrow_cast<u32>(fg);
-        _api.currentUnderlineColor = gsl::narrow_cast<u32>(ul);
         _api.attributes = attributes;
     }
     else
@@ -842,10 +830,9 @@ void AtlasEngine::_recreateCellCountDependentResources()
     // so we round up to multiple of 8 because 8 * sizeof(u32) == 32.
     _p.colorBitmapRowStride = alignForward<size_t>(_p.s->viewportCellCount.x, 8);
     _p.colorBitmapDepthStride = _p.colorBitmapRowStride * _p.s->viewportCellCount.y;
-    _p.colorBitmap = Buffer<u32, 32>(_p.colorBitmapDepthStride * 3);
+    _p.colorBitmap = Buffer<u32, 32>(_p.colorBitmapDepthStride * 2);
     _p.backgroundBitmap = { _p.colorBitmap.data(), _p.colorBitmapDepthStride };
     _p.foregroundBitmap = { _p.colorBitmap.data() + _p.colorBitmapDepthStride, _p.colorBitmapDepthStride };
-    _p.underlineBitmap = { _p.colorBitmap.data() + (_p.colorBitmapDepthStride << 1), _p.colorBitmapDepthStride };
 
     memset(_p.colorBitmap.data(), 0, _p.colorBitmap.size() * sizeof(u32));
 

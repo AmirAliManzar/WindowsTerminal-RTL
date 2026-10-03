@@ -35,12 +35,20 @@ Store, run the patcher for your architecture. It asks for administrator rights,
 so you will see a UAC prompt - that is normal, and it is required because the
 installed files live in `C:\Program Files\WindowsApps`.
 
+**This release is built for Windows Terminal `1.24.11911.0`** (see
+`REQUIRED_VERSION`). The patcher refuses to patch any other version, because the
+Atlas renderer is C++ with no ABI between releases: dropping a `1.24`
+`TerminalApp.dll` into a `1.25` install is not a patch, it is a corruption. If
+your Store copy is a different version, either install `1.24.11911.0` or build
+from the matching upstream ref yourself (see "Building from source").
+
 The patcher:
 
-1. Backs up the DLLs it is about to replace into
+1. Checks the installed version matches `REQUIRED_VERSION`, and stops if it does not
+2. Backs up the DLLs it is about to replace into
    `%ProgramData%\WindowsTerminal-RTL\backup\`
-2. Replaces them with the patched ones from the matching portable build
-3. Relaunches the terminal
+3. Replaces them with the patched ones from the matching portable build
+4. Relaunches the terminal
 
 You can also run it from PowerShell:
 
@@ -64,18 +72,20 @@ Useful options:
 ### A caveat, stated plainly
 
 The portable build is built **unpackaged**, while the Store version is packaged.
-The DLLs are therefore not identical builds - measured on this machine,
-`Microsoft.Terminal.UI.dll` is 230 KB in the Store install and 215 KB here. The
-patcher swaps them anyway, and backs them up first so `-Revert` can undo it, but
-it is a substitution between two different kinds of build and cannot be
-guaranteed for every Windows Terminal version.
+The DLLs are therefore not byte-identical builds - measured on this machine,
+`Microsoft.Terminal.UI.dll` is 230 KB in the Store install and 215 KB here. They
+are however built from the **same upstream commit**, `v1.24.11911.0`, so the
+interfaces line up; the patcher backs everything up first and `-Revert` puts it
+back.
 
 If the patched terminal will not start, run the patcher again with `-Revert`.
 
 ### Windows Terminal updates
 
-A Store update replaces the DLLs, which removes the patch. Run the patcher again
-after updating.
+A Store update replaces the DLLs, which removes the patch and very likely changes
+the version, so the patcher will then refuse rather than patch across versions.
+After an update, either roll the Store copy back to `1.24.11911.0`, or wait for a
+release of this project built against the new version.
 
 ## What the patch changes
 
@@ -234,11 +244,20 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 اگر ترمینال نصب‌شده از Store را نگه می‌دارید، Patcher مربوط به معماری سیستمتان را اجرا کنید. پنجرهٔ UAC ظاهر می‌شود؛ این طبیعی است، چون فایل‌های نصب‌شده داخل `C:\Program Files\WindowsApps` هستند و نوشتن در آن‌ها دسترسی ادمین می‌خواهد.
 
-قبل از هر تغییری از فایل‌ها پشتیبان گرفته می‌شود و با `-Revert` برمی‌گردند.
+**این نسخه برای Windows Terminal `1.24.11911.0` ساخته شده** (فایل `REQUIRED_VERSION`). Patcher از اصلاح هر نسخهٔ دیگری خودداری می‌کند، چون رندرکنندهٔ Atlas به زبان C++ نوشته شده و بین نسخه‌ها ABI پایداری ندارد: گذاشتن `TerminalApp.dll` نسخهٔ `1.24` داخل یک نصب `1.25` اصلاح نیست، خراب کردن است. اگر نسخهٔ Store شما چیز دیگری است، یا `1.24.11911.0` را نصب کنید یا خودتان از همان ref نسخهٔ بالا بیلد بگیرید (بخش «بیلد از سورس» را ببینید).
 
-⚠️ **یک نکتهٔ مهم:** بیلد پورتابل ما **unpackaged** است ولی نسخهٔ Store **packaged**، پس DLLها دقیقاً یکی نیستند. Patcher آن‌ها را جایگزین می‌کند و پشتیبان می‌گیرد، ولی این جایگزینی بین دو نوع بیلد متفاوت است و برای همهٔ نسخه‌ها قابل تضمین نیست. اگر ترمینال اصلاح‌شده بالا نیامد، دوباره با `-Revert` اجرا کنید.
+مراحل کار Patcher:
 
-با هر به‌روزرسانی رسمی، DLLها جایگزین می‌شوند و پچ از بین می‌رود؛ بعد از آپدیت دوباره Patcher را اجرا کنید.
+۱. نسخهٔ نصب‌شده را با `REQUIRED_VERSION` چک می‌کند و اگر یکی نباشد متوقف می‌شود
+۲. قبل از هر تغییری از DLLها پشتیبان می‌گیرد در `%ProgramData%\WindowsTerminal-RTL\backup\`
+۳. فایل‌ها را با نسخهٔ اصلاح‌شده جایگزین می‌کند
+۴. ترمینال را دوباره باز می‌کند
+
+⚠️ **یک نکتهٔ مهم:** بیلد پورتابل ما **unpackaged** است ولی نسخهٔ Store **packaged**، پس DLLها بایت‌به‌بایت یکی نیستند (مثلاً `Microsoft.Terminal.UI.dll` در Store حدود ۲۳۰ کیلوبایت و در اینجا ۲۱۵ کیلوبایت است). ولی هر دو از **همان کامیتی upstream** یعنی `v1.24.11911.0` ساخته شده‌اند، پس رابط‌ها با هم می‌خوانند. در هر حال Patcher ابتدا پشتیبان می‌گیرد و `-Revert` همه‌چیز را برمی‌گرداند.
+
+اگر ترمینال اصلاح‌شده بالا نیامد، دوباره با `-Revert` اجرا کنید.
+
+با هر به‌روزرسانی رسمی، DLLها جایگزین می‌شوند و پچ از بین می‌رود و احتمالاً نسخه هم عوض می‌شود، پس Patcher به‌جای اینکه نسخه‌های مختلف را با هم مخلوط کند، متوقف می‌شود. بعد از آپدیت یا Store را به `1.24.11911.0` برگردانید، یا منتظر نسخهٔ جدید این پروژه بمانید.
 
 ### چه چیزی تغییر کرده
 

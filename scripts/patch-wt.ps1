@@ -38,7 +38,14 @@ param(
     [string] $LocalDir,
     [string] $PackageDir,
     [string] $PackageName = 'Microsoft.WindowsTerminal',
-    [switch] $NoRestart
+    [switch] $NoRestart,
+    # The Windows Terminal version these DLLs were built from. The build writes
+    # this in, and it has to match the installed copy: the renderer is C++ with
+    # no stable ABI between versions, so mixing a 1.24 TerminalApp.dll into a
+    # 1.25 install is not a patch, it is a corruption. -Force overrides it for
+    # someone who understands that.
+    [string] $RequiredVersion,
+    [switch] $Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,15 +112,16 @@ function Get-BackupDir {
 }
 
 function Stop-Terminal {
+    param([string] $Path)
     Get-Process WindowsTerminal, OpenConsole -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -and $_.Path.StartsWith($InstallPath, [StringComparison]::OrdinalIgnoreCase) } |
+        Where-Object { $_.Path -and $_.Path.StartsWith($Path, [StringComparison]::OrdinalIgnoreCase) } |
         ForEach-Object {
             Write-Host "  closing $($_.ProcessName) (pid $($_.Id))"
             try { $_.CloseMainWindow() | Out-Null } catch { }
         }
     Start-Sleep -Milliseconds 800
     Get-Process WindowsTerminal, OpenConsole -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -and $_.Path.StartsWith($InstallPath, [StringComparison]::OrdinalIgnoreCase) } |
+        Where-Object { $_.Path -and $_.Path.StartsWith($Path, [StringComparison]::OrdinalIgnoreCase) } |
         ForEach-Object {
             Write-Host "  forcing $($_.ProcessName) (pid $($_.Id))"
             try { Stop-Process -Id $_.Id -Force } catch { }
@@ -122,7 +130,8 @@ function Stop-Terminal {
 }
 
 function Start-Terminal {
-    $exe = Join-Path $InstallPath 'WindowsTerminal.exe'
+    param([string] $Path)
+    $exe = Join-Path $Path 'WindowsTerminal.exe'
     if (Test-Path -LiteralPath $exe) {
         Write-Host "  launching Windows Terminal"
         Start-Process -FilePath 'shell:AppsFolder\Microsoft.WindowsTerminal_8wekyb3d8bbwe!Microsoft.WindowsTerminal' -ErrorAction SilentlyContinue
@@ -137,13 +146,20 @@ if ($Revert) {
     if (-not (Test-Path -LiteralPath $backup)) {
         throw "no backup found at $backup - nothing to revert"
     }
-    Stop-Terminal
-    Write-Host "restoring from $backup"
-    Get-ChildItem -LiteralPath $backup -Filter *.dll | ForEach-Object {
-        Write-File -Source $_.FullName -Destination (Join-Path $install $_.Name)
-        Write-Host "  $($_.Name)"
+    # An empty backup folder is not a backup at all: it means a previous run was
+    # interrupted before it copied anything, or the folder was made by hand.
+    # Restoring from it would delete nothing and silently claim success.
+    $backups = @(Get-ChildItem -LiteralPath $backup -Filter *.dll -ErrorAction SilentlyContinue)
+    if ($backups.Count -eq 0) {
+        throw "backup folder $backup has no DLLs in it - nothing to revert"
     }
-    if (-not $NoRestart) { Start-Terminal }
+    Stop-Terminal -Path $install
+    Write-Host "restoring from $backup"
+    foreach ($f in $backups) {
+        Write-File -Source $f.FullName -Destination (Join-Path $install $f.Name)
+        Write-Host "  $($f.Name)"
+    }
+    if (-not $NoRestart) { Start-Terminal -Path $install }
     Write-Host "done."
     exit 0
 }
@@ -155,6 +171,24 @@ if ($Revert) {
 
 $install = Get-InstallPath
 $backup = Get-BackupDir $install
+
+# The version gate. A Store update lands silently and changes every one of these
+# DLLs at once; patching across that is how an install gets broken. -Revert has
+# to keep working on any version, because getting back to a clean install is the
+# one thing that must never be blocked.
+if (-not $Revert -and $RequiredVersion -and -not $PackageDir) {
+    $pkg = Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue |
+           Sort-Object Version -Descending | Select-Object -First 1
+    $installed = if ($pkg) { $pkg.Version } else { '(not installed as a package)' }
+    Write-Host "installed   : Windows Terminal $installed"
+    Write-Host "built for   : Windows Terminal $RequiredVersion"
+    if ($installed -ne $RequiredVersion -and -not $Force) {
+        throw "this patcher is built for Windows Terminal $RequiredVersion, but the installed copy is $installed. The renderer has no stable ABI between versions, so replacing these files would corrupt the install. Either install Windows Terminal $RequiredVersion, or re-run with -Force once you have a matching build."
+    }
+    if ($installed -ne $RequiredVersion) {
+        Write-Warning "-Force set: patching $installed with files built for $RequiredVersion. This may not start."
+    }
+}
 
 # Where do the replacement DLLs come from?
 $source = $LocalDir
@@ -222,7 +256,7 @@ foreach ($f in $planned) {
 Write-Host "backup      : $backup"
 Write-Host ""
 
-Stop-Terminal
+Stop-Terminal -Path $install
 
 $applied = @()
 try {
@@ -271,5 +305,5 @@ Write-Host "patched $($applied.Count) file(s)."
 Write-Host "A Store update replaces these files and removes the patch - run the patcher again after updating."
 Write-Host "To undo: .\WindowsTerminal-RTL-patcher.exe -Revert"
 
-if (-not $NoRestart) { Start-Terminal }
+if (-not $NoRestart) { Start-Terminal -Path $install }
 exit 0
