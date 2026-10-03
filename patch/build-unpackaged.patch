@@ -81,10 +81,10 @@ index bde2ad647..08eae1aad 100644
 +endif()
 \ No newline at end of file
 diff --git a/src/common.build.post.props b/src/common.build.post.props
-index 8f43c32f5..409aac057 100644
+index 8f43c32f5..ff6e28f8e 100644
 --- a/src/common.build.post.props
 +++ b/src/common.build.post.props
-@@ -129,4 +129,76 @@
+@@ -129,4 +129,97 @@
  
    <!-- For C++ projects, bring in the vcpkg targets at the end -->
    <Import Project="$(VcpkgRoot)/scripts/buildsystems/msbuild/vcpkg.targets" Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
@@ -113,11 +113,32 @@ index 8f43c32f5..409aac057 100644
 +       APPX3217 / MSB4044 "MakePriExeFullPath". Supply the path and skip the probe.
 +       MSBuild keeps the last definition of a target name, and this file is
 +       imported after the Appx targets, so ours wins.
++
++       The path is the HOST's MakePri, not the target's. A resource index maps
++        resource paths to files and carries an architecture qualifier as data; it
++        contains no code, so the machine that writes it does not constrain what it
++        may contain. The SDK ships makepri.exe per architecture and the ARM64 one
++        cannot be executed on x64, so asking for $(Platform)'s copy fails as soon
++        as ARM64 is cross-compiled:
++
++          error MSB6003: The specified task executable "MakePri.exe" could not be
++          run. The specified executable is not a valid application for this OS
++          platform.
++
++        MakePriArchitecture stays $(Platform): that one is the qualifier recorded
++        in the index, and it does have to be the target's.
 +       =================================================================== -->
 +  <Target Name="_GetSdkToolsPathsFromSdk"
 +          Condition="'$(LocalBuildSkipAppxSdkToolProbe)'=='true'">
 +    <PropertyGroup>
-+      <MakePriExeFullPath Condition="'$(MakePriExeFullPath)'==''">$(WindowsSdkDir)bin\10.0.26100.0\$(Platform)\makepri.exe</MakePriExeFullPath>
++      <!-- PROCESSOR_ARCHITECTURE is an environment property MSBuild exposes, and
++           the names are the SDK's directory names once translated, which is why
++           AMD64 maps to x64 rather than to itself. -->
++      <_MakePriHostDir Condition="'$(_MakePriHostDir)'=='' And ('$(PROCESSOR_ARCHITECTURE)'=='AMD64' Or '$(PROCESSOR_ARCHITECTURE)'=='x64')">x64</_MakePriHostDir>
++      <_MakePriHostDir Condition="'$(_MakePriHostDir)'=='' And '$(PROCESSOR_ARCHITECTURE)'=='ARM64'">arm64</_MakePriHostDir>
++      <_MakePriHostDir Condition="'$(_MakePriHostDir)'=='' And '$(PROCESSOR_ARCHITECTURE)'=='x86'">x86</_MakePriHostDir>
++      <_MakePriHostDir Condition="'$(_MakePriHostDir)'==''">$(Platform)</_MakePriHostDir>
++      <MakePriExeFullPath Condition="'$(MakePriExeFullPath)'==''">$(WindowsSdkDir)bin\10.0.26100.0\$(_MakePriHostDir)\makepri.exe</MakePriExeFullPath>
 +      <MakePriArchitecture Condition="'$(MakePriArchitecture)'==''">$(Platform)</MakePriArchitecture>
 +    </PropertyGroup>
 +  </Target>
