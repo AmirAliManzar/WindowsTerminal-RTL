@@ -92,9 +92,44 @@ $include = @(
 # Never ship symbols. They are large, and nothing here is meant to be debugged.
 $exclude = @('*.pdb', '*.ipdb')
 
+function Test-Excluded {
+    param([System.IO.FileSystemInfo] $Item)
+    return $exclude -contains ('*' + $Item.Extension)
+}
+
+function Copy-Tree {
+    param(
+        [System.IO.DirectoryInfo] $Source,
+        [string] $Destination
+    )
+    if (-not (Test-Path -LiteralPath $Destination)) {
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    }
+    foreach ($f in (Get-ChildItem -LiteralPath $Source.FullName -Recurse -File -Force -ErrorAction SilentlyContinue)) {
+        if (Test-Excluded $f) { continue }
+        $rel = $f.FullName.Substring($Source.FullName.Length).TrimStart('\')
+        $to = Join-Path $Destination $rel
+        $toDir = Split-Path -Path $to -Parent
+        if (-not (Test-Path -LiteralPath $toDir)) {
+            New-Item -ItemType Directory -Path $toDir -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $f.FullName -Destination $to -Force
+    }
+}
+
 foreach ($pattern in $include) {
+    # Directories listed in $include are copied whole. A -File filter cannot match
+    # a directory, so 'Monaco' and 'UnpackagedLayout' matched nothing at all and
+    # the Monaco editor assets silently never shipped: the portable build had no
+    # Monaco directory, which the release archive carried on to the user.
+    foreach ($dir in (Get-ChildItem -LiteralPath $BinDir -Directory -Filter $pattern -Recurse -ErrorAction SilentlyContinue)) {
+        $rel = $dir.FullName.Substring($BinDir.Length).TrimStart('\')
+        Write-Host "[package] dir   : $rel"
+        Copy-Tree -Source $dir -Destination (Join-Path $OutDir $rel)
+    }
+
     Get-ChildItem -LiteralPath $BinDir -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $exclude -notcontains ('*' + $_.Extension) } |
+        Where-Object { -not (Test-Excluded $_) } |
         ForEach-Object {
             $relative = $_.FullName.Substring($BinDir.Length).TrimStart('\')
             $dest = Join-Path $OutDir $relative
@@ -132,8 +167,15 @@ foreach ($name in $rootExes) {
 
 # Whatever the prepare step placed next to the exe also belongs at the root, so a
 # flat launcher folder is self-contained.
+#
+# The symbol exclusion applies here too. It used not to, and that is where 660 MB
+# of .pdb came from: this loop copies whatever it finds beside the exe, and the
+# build leaves the symbols there, so the $exclude list - which only guarded the
+# $include loop above - had no effect on it. The archive was 161 MB of which about
+# 85% was debug symbols for binaries nobody is going to debug.
 $exeDir = Split-Path -Path $exe -Parent
 foreach ($item in (Get-ChildItem -LiteralPath $exeDir -Force -ErrorAction SilentlyContinue)) {
+    if ($exclude -contains ('*' + $item.Extension)) { continue }
     $dest = Join-Path $OutDir $item.Name
     if (Test-Path -LiteralPath $dest) { continue }
     if ($item.PSIsContainer) {
