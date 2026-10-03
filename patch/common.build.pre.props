@@ -75,7 +75,18 @@
   </ItemGroup>
 
   <PropertyGroup Label="Globals">
-    <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' == ''">10.0.22621.0</WindowsTargetPlatformVersion>
+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): this branch pins the
+       Windows SDK to 10.0.22621.0, which is not installed on every build
+       machine - a fresh runner has 10.0.26100.0 only, and every project then
+       dies with MSB8036. Ask the installed Kits tree which SDKs it has, the
+       same lookup Microsoft.Cpp.WindowsSDK.targets makes, and take one that is
+       actually present. The original Condition is kept, so a version supplied
+       on the command line still wins.
+
+       Set -p:LocalBuildSdkAutoDetect=false to pin 10.0.22621.0 again. -->
+  <_LocalSdkDirs Condition="'$(LocalBuildSdkAutoDetect)' != 'false' And '$(WindowsSdkDir)' != '' And Exists('$(WindowsSdkDir)\Lib')">$([System.IO.Directory]::GetDirectories('$(WindowsSdkDir)\Lib'))</_LocalSdkDirs>
+  <_LocalSdkFirst Condition="'$(_LocalSdkDirs)' != ''">$([System.String]::Copy('$(_LocalSdkDirs)').Split(';')[0])</_LocalSdkFirst>
+  <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' == '' And '$(_LocalSdkFirst)' != ''">$([System.IO.Path]::GetFileName('$(_LocalSdkFirst)'))</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion Condition="'$(WindowsTargetPlatformMinVersion)' == ''">10.0.18362.0</WindowsTargetPlatformMinVersion>
   </PropertyGroup>
 
