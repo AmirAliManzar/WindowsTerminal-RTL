@@ -1,3 +1,51 @@
+diff --git a/build/scripts/Merge-PriFiles.ps1 b/build/scripts/Merge-PriFiles.ps1
+index 3a9985936..952e2b4ae 100644
+--- a/build/scripts/Merge-PriFiles.ps1
++++ b/build/scripts/Merge-PriFiles.ps1
+@@ -14,11 +14,41 @@ Param(
+     $IndexName = "Application",
+ 
+     [Parameter(HelpMessage="Path to makepri.exe")]
+-    [ValidateScript({Test-Path $_ -Type Leaf})]
+     [string]
+-    $MakePriPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\MakePri.exe"
++    $MakePriPath
+ )
+ 
++# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): the SDK the default below
++# used to pin is not installed on every build machine, and the script died
++# with 'not recognized as the name of a cmdlet' before doing any work.
++# Try that path first - it is still right where the SDK exists - then walk
++# the installed Kits tree. The host directory follows
++# PROCESSOR_ARCHITECTURE rather than the target platform, because makepri
++# is a host tool: a PRI is architecture-independent data, and the ARM64
++# binary cannot run on an x64 runner. Mirrors _MakePriHostDir in
++# common.build.post.props so the two cannot drift.
++if (-not $MakePriPath) {
++    $pinned = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\MakePri.exe"
++    if (Test-Path $pinned -Type Leaf) {
++        $MakePriPath = $pinned
++    } else {
++        $hostDir = switch ($env:PROCESSOR_ARCHITECTURE) {
++            'AMD64' { 'x64' }
++            'ARM64' { 'arm64' }
++            'x86'   { 'x86' }
++            default { $env:PROCESSOR_ARCHITECTURE }
++        }
++        $kits = "C:\Program Files (x86)\Windows Kits\10\bin"
++        $found = Get-ChildItem $kits -Directory -ErrorAction SilentlyContinue |
++            Sort-Object Name -Descending |
++            ForEach-Object { Join-Path $_.FullName "$hostDir\makepri.exe" } |
++            Where-Object { Test-Path $_ -Type Leaf } |
++            Select-Object -First 1
++        if (-not $found) { throw "makepri.exe not found under $kits for $hostDir" }
++        $MakePriPath = $found
++    }
++}
++
+ $ErrorActionPreference = 'Stop'
+ 
+ $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "tmp$([Convert]::ToString((Get-Random 65535),16).PadLeft(4,'0')).tmp"
 diff --git a/src/common.build.post.props b/src/common.build.post.props
 index ec143372f..5dedf4e00 100644
 --- a/src/common.build.post.props
