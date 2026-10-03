@@ -187,9 +187,21 @@ $platform = if ($Arch -eq 'arm64') { 'ARM64' } else { 'x64' }
 # directory, so the working directory is part of the build rather than incidental
 # to it. Getting it wrong does not say so: it surfaces as MSB5026, a complaint
 # about a solution file, which points at the wrong thing entirely.
+#
+# The solution file itself is whichever one this upstream ref has: newer
+# microsoft/terminal ships OpenConsole.slnx, the v1.24 release tag ships the
+# classic OpenConsole.sln. The filter names the one it was generated from, so
+# either is fine here.
+$solution = @('OpenConsole.slnx', 'OpenConsole.sln') |
+    ForEach-Object { Join-Path $src $_ } |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    Select-Object -First 1
+if (-not $solution) {
+    throw "neither OpenConsole.slnx nor OpenConsole.sln found under $src"
+}
 $expect = @(
     (Join-Path $src 'WindowsTerminal.slnf'),
-    (Join-Path $src 'OpenConsole.slnx'),
+    $solution,
     (Join-Path $src 'src\cascadia\WindowsTerminal\WindowsTerminal.vcxproj'),
     (Join-Path $src 'dep\package-portable.ps1')
 )

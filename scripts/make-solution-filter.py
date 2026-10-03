@@ -31,6 +31,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SLNX = os.path.join(ROOT, "OpenConsole.slnx")
+SLN = os.path.join(ROOT, "OpenConsole.sln")
 OUT = os.path.join(ROOT, "WindowsTerminal.slnf")
 
 # Where the closure starts.
@@ -41,6 +42,13 @@ EXCLUDE_EXT = (".wapproj", ".csproj", ".vcxproj.filters")
 EXCLUDE_SUBSTR = ("test", "Test", "unittest", "unittest")
 
 PROJECT_REF = re.compile(r'<ProjectReference\s+Include="([^"]+)"')
+
+# The classic .sln format: one "Project(...)" line per project, the path in the
+# third field, and dependencies declared in a nested "ProjectSection(...)" block
+# rather than in the project element itself. microsoft/terminal moved to the
+# XML .slnx form after v1.24.11911.0, so a checkout of the release tag only has
+# the old one.
+SLN_PROJECT = re.compile(r'^Project\("[^"]*"\)\s*=\s*"([^"]*)",\s*"([^"]*)",\s*"\{([^}]*)\}"')
 
 
 def norm(path):
@@ -63,6 +71,67 @@ def read_slnx():
             if d.get("Project")
         ]
     return deps, known
+
+
+def read_sln():
+    """The same shape as read_slnx, from the classic text solution format.
+
+    A .sln declares build order with a ProjectSection whose type is
+    ProjectDependencies, listing the GUIDs a project must wait for. GUIDs are
+    useless without a lookup table, so this maps each GUID to its path first and
+    then resolves the edges to paths.
+    """
+    with open(SLN, "r", encoding="utf-8-sig", errors="replace") as fh:
+        text = fh.read()
+
+    guid_to_path = {}
+    order = []
+    for line in text.splitlines():
+        match = SLN_PROJECT.match(line.strip())
+        if not match:
+            continue
+        _name, path, guid = match.group(1), match.group(2), match.group(3)
+        path = norm(path)
+        guid_to_path[guid.lower()] = path
+        order.append(path)
+
+    deps, known = {}, set()
+    for path in order:
+        known.add(path)
+        deps[path] = []
+
+    # Re-scan for the dependency sections, which sit inside the project blocks.
+    current = None
+    in_deps = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        match = SLN_PROJECT.match(stripped)
+        if match:
+            current = norm(match.group(2))
+            in_deps = False
+            continue
+        if "ProjectSection(ProjectDependencies)" in stripped:
+            in_deps = True
+            continue
+        if "EndProjectSection" in stripped:
+            in_deps = False
+            continue
+        if in_deps and current and "=" in stripped:
+            guid = stripped.split("=", 1)[0].strip().strip("{}").lower()
+            dep = guid_to_path.get(guid)
+            if dep:
+                deps.setdefault(current, []).append(dep)
+
+    return deps, known
+
+
+def read_solution():
+    """Prefer the XML form; fall back to the classic one on older refs."""
+    if os.path.isfile(SLNX):
+        return read_slnx(), "OpenConsole.slnx"
+    if os.path.isfile(SLN):
+        return read_sln(), "OpenConsole.sln"
+    return None, None
 
 
 def project_references(rel_path):
@@ -95,10 +164,11 @@ def wanted(path):
 
 
 def main():
-    if not os.path.isfile(SLNX):
-        sys.exit("OpenConsole.slnx not found next to this script")
+    solution, name = read_solution()
+    if solution is None:
+        sys.exit("neither OpenConsole.slnx nor OpenConsole.sln found next to this script")
 
-    deps, known = read_slnx()
+    deps, known = solution
 
     included, missing = set(), []
 
@@ -128,7 +198,7 @@ def main():
 
     unknown = [p for p in included if p not in known]
     if unknown:
-        print("warning: included but not in OpenConsole.slnx:")
+        print("warning: included but not in {}:".format(name))
         for u in sorted(unknown):
             print("   " + u)
 
@@ -139,7 +209,7 @@ def main():
     # because MSBuild compares the two verbatim. Convert on the way out only;
     # everything above works in one normalised form.
     listing = json.dumps(
-        {"solution": {"path": "OpenConsole.slnx",
+        {"solution": {"path": name,
                       "projects": sorted((p.replace("/", "\\") for p in included),
                                         key=str.lower)}},
         indent=2,
@@ -147,7 +217,7 @@ def main():
     with open(OUT, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(listing + "\n")
 
-    print("wrote {} with {} projects".format(os.path.basename(OUT), len(included)))
+    print("wrote {} with {} projects (from {})".format(os.path.basename(OUT), len(included), name))
     for p in sorted(included, key=str.lower):
         print("   " + p)
 

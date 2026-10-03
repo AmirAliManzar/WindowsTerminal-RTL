@@ -1,6 +1,6 @@
 {
   "solution": {
-    "path": "OpenConsole.slnx",
+    "path": "OpenConsole.sln",
     "projects": [
       "src\\audio\\midi\\lib\\midi.vcxproj",
       "src\\buffer\\out\\lib\\bufferout.vcxproj",
@@ -10,7 +10,6 @@
       "src\\cascadia\\TerminalControl\\dll\\TerminalControl.vcxproj",
       "src\\cascadia\\TerminalControl\\TerminalControlLib.vcxproj",
       "src\\cascadia\\TerminalCore\\lib\\TerminalCore-lib.vcxproj",
-      "src\\cascadia\\TerminalSettingsAppAdapterLib\\TerminalSettingsAppAdapterLib.vcxproj",
       "src\\cascadia\\TerminalSettingsEditor\\Microsoft.Terminal.Settings.Editor.vcxproj",
       "src\\cascadia\\TerminalSettingsModel\\dll\\Microsoft.Terminal.Settings.Model.vcxproj",
       "src\\cascadia\\TerminalSettingsModel\\Microsoft.Terminal.Settings.ModelLib.vcxproj",
