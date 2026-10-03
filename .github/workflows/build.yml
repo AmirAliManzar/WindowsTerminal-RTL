@@ -24,15 +24,24 @@ jobs:
             arch: x64
             asset: WindowsTerminal-RTL-x64
             patcher: WindowsTerminal-RTL-patcher-x64.exe
-          # Windows on ARM.
+          # ARM64, cross-compiled from the x64 runner rather than built on
+          # windows-11-arm.
           #
-          # Deliberately not best-effort. An earlier run had
-          # continue-on-error on the build step: the terminal failed to build on
-          # both legs, the ARM job still reported green, and it took reading the
-          # x64 log to notice. publish runs with if: always(), so x64 assets are
-          # safe without it, and a build that cannot produce a terminal should
-          # be a red build.
-          - os: windows-11-arm
+          # On windows-11-arm the build died with
+          #   error C3859: Failed to create virtual memory for PCH
+          #   error C1076: compiler limit: internal heap limit reached
+          # The precompiled headers are several hundred MB and that runner does not
+          # have the memory to build them. The x64 runner does, and MSVC cross
+          # compiles to ARM64 from it, which is also how the first successful build
+          # produced an ARM64 binary.
+          #
+          # Deliberately not best-effort. An earlier run had continue-on-error on
+          # the build step: the terminal failed to build on both legs, the ARM job
+          # still reported green, and it took reading the x64 log to notice.
+          # publish runs with if: always(), so x64 assets were never at risk from
+          # an ARM failure, and a build that cannot produce a terminal should be a
+          # red build.
+          - os: windows-latest
             arch: arm64
             asset: WindowsTerminal-RTL-arm64
             patcher: WindowsTerminal-RTL-patcher-arm64.exe
