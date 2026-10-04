@@ -1,8 +1,32 @@
 diff --git a/src/common.build.pre.props b/src/common.build.pre.props
-index e1b03c9b2..5d7f33cb4 100644
+index e1b03c9b2..ab155c4d8 100644
 --- a/src/common.build.pre.props
 +++ b/src/common.build.pre.props
-@@ -136,6 +136,17 @@
+@@ -99,6 +99,23 @@
+     <PlatformToolset Condition="'$(PlatformToolset)' == ''">v143</PlatformToolset>
+     <CharacterSet>Unicode</CharacterSet>
+     <LinkIncremental>false</LinkIncremental>
++    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): restored here, after
++         upstream removed it in #20518 ("Remove PreferredToolArchitecture
++         override now that we require VS 2026"). Upstream's own Azure pipelines
++         were switched to msbuildArchitecture: x64 in the same change, and VS
++         2026 defaults to 64-bit hosted tools, so the property was dead weight
++         there. A windows-latest GitHub runner is still on VS 2022, whose hosted
++         tools are 32-bit; without this line link.exe resolves to the x86 copy
++         and the first x64 static library dies with
++
++           warning LNK4068: /MACHINE not specified; defaulting to X86
++           fatal error LNK1112: module machine type 'x64' conflicts with
++             target machine type 'x86'
++
++         on Microsoft.Terminal.Settings.ModelLib. This is a build-host concern
++         only, and matches the cross-compile-from-x64 model CI already uses for
++         ARM64, so it is unconditional rather than per-architecture. -->
++    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+     <EnableHybridCRT Condition="'$(EnableHybridCRT)'=='' and '$(ConfigurationSupportsHybridCRT)'=='true'">true</EnableHybridCRT>
+     <UseCrtSDKReferenceStaticWarning Condition="'$(EnableHybridCRT)'=='true'">false</UseCrtSDKReferenceStaticWarning>
+     <!--
+@@ -136,6 +153,17 @@
          C26494: Variable 'index' is uninitialized. Always initialize an object (type. 5).
            This diagnostic is broken in VS 17.7 which our CI currently uses. It's fixed in 17.8.
        -->
@@ -20,7 +44,7 @@ index e1b03c9b2..5d7f33cb4 100644
        <DisableSpecificWarnings>4201;4312;4467;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
        <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
-@@ -266,6 +277,32 @@
+@@ -266,6 +294,32 @@
    </ItemDefinitionGroup>
  
    <Import Project="$(MSBuildThisFileDirectory)..\build\rules\Branding.targets" />
@@ -53,7 +77,7 @@ index e1b03c9b2..5d7f33cb4 100644
  
    <PropertyGroup Label="vcpkg">
      <VcpkgEnableManifest>true</VcpkgEnableManifest>
-@@ -279,6 +316,12 @@
+@@ -279,6 +333,12 @@
  
      <VcpkgAdditionalInstallOptions>--x-feature=terminal</VcpkgAdditionalInstallOptions>
      <VcpkgAdditionalInstallOptions Condition="'$(Configuration)'=='Fuzzing'">$(VcpkgAdditionalInstallOptions) --overlay-triplets=$(SolutionDir)\dep\vcpkg-overlay-triplets\fuzzing</VcpkgAdditionalInstallOptions>

@@ -99,6 +99,23 @@
     <PlatformToolset Condition="'$(PlatformToolset)' == ''">v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <LinkIncremental>false</LinkIncremental>
+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): restored here, after
+         upstream removed it in #20518 ("Remove PreferredToolArchitecture
+         override now that we require VS 2026"). Upstream's own Azure pipelines
+         were switched to msbuildArchitecture: x64 in the same change, and VS
+         2026 defaults to 64-bit hosted tools, so the property was dead weight
+         there. A windows-latest GitHub runner is still on VS 2022, whose hosted
+         tools are 32-bit; without this line link.exe resolves to the x86 copy
+         and the first x64 static library dies with
+
+           warning LNK4068: /MACHINE not specified; defaulting to X86
+           fatal error LNK1112: module machine type 'x64' conflicts with
+             target machine type 'x86'
+
+         on Microsoft.Terminal.Settings.ModelLib. This is a build-host concern
+         only, and matches the cross-compile-from-x64 model CI already uses for
+         ARM64, so it is unconditional rather than per-architecture. -->
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
     <EnableHybridCRT Condition="'$(EnableHybridCRT)'=='' and '$(ConfigurationSupportsHybridCRT)'=='true'">true</EnableHybridCRT>
     <UseCrtSDKReferenceStaticWarning Condition="'$(EnableHybridCRT)'=='true'">false</UseCrtSDKReferenceStaticWarning>
     <!--
