@@ -163,7 +163,7 @@
              C4456: a declaration hides a previous local (TextMenuFlyout.cpp)
              C4458: a declaration hides a class member      (VsSetupConfiguration.h:182)
            Guarded so upstream behaviour is restored by default. -->
-      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true' Or ('$(LocalBuildDisableNewerMsvcWarnings)'=='' And '$(VisualStudioVersion)' &gt;= '18.0')">4245;4706;4456;4458;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true' Or ('$(LocalBuildDisableNewerMsvcWarnings)'=='' And '$(VisualStudioVersion)' &gt;= '18.0')">4245;4706;4456;4458;4875;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <DisableSpecificWarnings>4201;4312;4467;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
