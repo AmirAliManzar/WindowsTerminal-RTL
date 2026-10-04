@@ -144,7 +144,12 @@ jobs:
             [ -d "$src" ] || continue
             # The collector writes a marker even when the build failed, so check
             # what it actually managed to produce.
-            for f in "$src"/*.zip "$src"/build-info-*.json "$src"/probes-*.txt; do
+            #
+            # The probe reports stay out of the release. They answer build-time
+            # questions about DirectWrite shaping and are noise to anyone who
+            # just wants the terminal; they are still in the workflow artifacts
+            # attached to the run.
+            for f in "$src"/*.zip "$src"/build-info-*.json; do
               [ -e "$f" ] || continue
               cp -f "$f" release-assets/
             done
@@ -155,7 +160,9 @@ jobs:
           cp -f patch/build-unpackaged.patch release-assets/
           cp -f UPSTREAM_REF release-assets/
 
-          echo '--- assets ---'
+          # The small installer: a few kilobytes that download the build it
+          # installs, so the Releases page is not the only entry point.
+          cp -f scripts/install-latest.ps1 release-assets/
           ls -la release-assets
           echo '--- sha256 ---'
           cd release-assets

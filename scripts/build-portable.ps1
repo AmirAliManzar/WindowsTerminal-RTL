@@ -104,6 +104,24 @@ try {
     & python dep\make-solution-filter.py | Out-Null
 } finally { Pop-Location }
 
+# ---------------------------------------------------------------- icon
+
+# Replace the terminal's Dev-branded icon with an RTL one. The branding defaults
+# to Dev (nothing sets WindowsTerminalBranding for an unpackaged build), so
+# WindowsTerminal.rc falls through to res\terminal\images-Dev\terminal.ico, which
+# carries a "DEV" tag in its corner. Dropping our icon there swaps the taskbar,
+# window and jump-list icon for the "RTL" badge without touching the source or
+# the patch. The two high-contrast variants are left alone: they are only used
+# under a High Contrast theme and are meant to be monochrome.
+$iconDst = Join-Path $src 'res\terminal\images-Dev\terminal.ico'
+$iconSrc = Join-Path $here 'assets\terminal-rtl.ico'
+if (-not (Test-Path -LiteralPath $iconSrc)) { throw "missing $iconSrc" }
+if (-not (Test-Path -LiteralPath (Join-Path $src 'res\terminal\images-Dev'))) {
+    throw "images-Dev icon folder not found"
+}
+Write-Host "[build] replacing the Dev icon with the RTL icon"
+Copy-Item -LiteralPath $iconSrc $iconDst -Force
+
 # ---------------------------------------------------------------- dependencies
 
 # ---------------------------------------------------------------- vcpkg
