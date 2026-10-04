@@ -10,6 +10,8 @@ This patch fixes the problem at the text-shaping layer, in the Atlas renderer, s
 
 Prebuilt files are on the [Releases](../../releases) page:
 
+- `install-latest.ps1` the small installer — a few kilobytes that download and
+  install the right build for you
 - `WindowsTerminal-RTL-x64.zip` portable build for 64-bit Intel/AMD
 - `WindowsTerminal-RTL-arm64.zip` portable build for Windows on ARM
 - `windowsterminal-rtl.patch` the RTL patch, for building Windows Terminal yourself
@@ -24,8 +26,11 @@ configuration, so your profiles, themes, colour schemes and fonts carry over:
 
 Download the build for your architecture and unzip it anywhere.
 
-- **No install:** run `WindowsTerminal.exe` from the folder. Nothing is
-  installed and nothing outside that folder is touched.
+- **Small installer:** grab `install-latest.ps1` from the Releases page,
+  right-click → *Run with PowerShell*. It detects your architecture, downloads
+  the matching build, verifies it, and installs it. This is the lightest way in.
+- **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
+  and nothing outside that folder is touched.
 - **With a Start menu entry:** the zip also carries `install.ps1`. Right-click
   it → *Run with PowerShell*. It copies the build to
   `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL`, creates a Start menu shortcut
@@ -114,8 +119,8 @@ makes a Persian line readable at all.
 ### How it was verified
 
 `tools/bidi-probe` holds five small programs that answer questions about the
-rendering that cannot be answered by looking at a screen. They run in CI and their
-output ships in the release:
+rendering that cannot be answered by looking at a screen. They run in CI and
+their output is attached to the workflow run as build artifacts:
 
 | probe | question |
 |---|---|
@@ -243,7 +248,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 ### آزمون‌ها
 
-پنج برنامهٔ کوچک در `tools/bidi-probe` هست که به سؤال‌هایی جواب می‌دهند که با نگاه کردن به صفحه نمی‌شود پرسید — از جمله اینکه آیا خواندنِ سلول‌های رسم‌شده متن اصلی را برمی‌گرداند یا نه، و کدام فونت با شبکهٔ سلولی ترمینال جور درمی‌آید. خروجی‌شان در هر بیلد اجرا و داخل ریلیز منتشر می‌شود.
+پنج برنامهٔ کوچک در `tools/bidi-probe` هست که به سؤال‌هایی جواب می‌دهند که با نگاه کردن به صفحه نمی‌شود پرسید — از جمله اینکه آیا خواندنِ سلول‌های رسم‌شده متن اصلی را برمی‌گرداند یا نه، و کدام فونت با شبکهٔ سلولی ترمینال جور درمی‌آید. خروجی‌شان در هر بیلد اجرا می‌شود و به‌عنوان artifact به همان اجرای CI پیوست می‌شود، ولی دیگر داخل صفحهٔ ریلیز قرار نمی‌گیرد.
 
 دو نکته که با اندازه‌گیری ثابت شده و ممکن است انتظارش را نداشته باشید:
 
