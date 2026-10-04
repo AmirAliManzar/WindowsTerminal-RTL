@@ -106,7 +106,13 @@
 
   <!-- For ALL build types-->
   <PropertyGroup Label="Configuration">
-    <PlatformToolset>v143</PlatformToolset>
+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): this branch pins v143, which
+         a newer Visual Studio does not install the UWP build tools for, and every
+         WinRT project then fails with MSB8020. Choose from the installed version
+         instead, the way a later upstream revision does, so the same file builds
+         on both a VS 2022 image (v143) and a VS 18 one (v145). -->
+    <PlatformToolset Condition="'$(VisualStudioVersion)' >= '18.0'">v145</PlatformToolset>
+    <PlatformToolset Condition="'$(PlatformToolset)' == ''">v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <LinkIncremental>false</LinkIncremental>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
@@ -157,7 +163,7 @@
              C4456: a declaration hides a previous local (TextMenuFlyout.cpp)
              C4458: a declaration hides a class member      (VsSetupConfiguration.h:182)
            Guarded so upstream behaviour is restored by default. -->
-      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true'">4245;4706;4456;4458;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true' Or ('$(LocalBuildDisableNewerMsvcWarnings)'=='' And '$(VisualStudioVersion)' &gt;= '18.0')">4245;4706;4456;4458;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <DisableSpecificWarnings>4201;4312;4467;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
