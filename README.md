@@ -22,9 +22,16 @@ configuration, so your profiles, themes, colour schemes and fonts carry over:
 %LOCALAPPDATA%\Microsoft\Windows Terminal
 ```
 
-Download the build for your architecture, unzip it anywhere, and run
-`WindowsTerminal.exe`. Nothing is installed and nothing outside that folder is
-touched.
+Download the build for your architecture and unzip it anywhere.
+
+- **No install:** run `WindowsTerminal.exe` from the folder. Nothing is
+  installed and nothing outside that folder is touched.
+- **With a Start menu entry:** the zip also carries `install.ps1`. Right-click
+  it → *Run with PowerShell*. It copies the build to
+  `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL`, creates a Start menu shortcut
+  (and a desktop one), and needs no admin rights. Run
+  `install.ps1 -Uninstall` to remove it. Your settings are never touched either
+  way, because a portable build reads the unpackaged settings path above.
 
 ## Patching an installed copy — and why it is not possible
 
@@ -52,9 +59,9 @@ replace the Store install in place, which is not something this project can do.
 folder, reads your existing settings and fonts, needs no installation, and
 touches nothing outside that folder.
 
-Work is underway on an AppX package that installs *alongside* the Store
-terminal through the deployment API, so the RTL terminal gets a Start menu
-entry without touching the Store install.
+An optional `install.ps1` is in the zip and gives the build a Start menu entry
+without touching the Store install, so the AppX work above is no longer the
+only route to that.
 
 ## What the patch changes
 
@@ -201,7 +208,10 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 %LOCALAPPDATA%\Microsoft\Windows Terminal
 ```
 
-فایل zip را هرجا باز کنید و `WindowsTerminal.exe` را اجرا کنید.
+فایل zip را هرجا باز کنید.
+
+- **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
+- **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
 
 ### اصلاح نسخهٔ نصب‌شده — و چرا ممکن نیست
 
@@ -213,7 +223,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 **بیلد پورتابل بالا جایگزین کارآمد است.** از هر پوشه‌ای اجرا می‌شود، تنظیمات و فونت‌های فعلی شما را می‌خواند، نیازی به نصب ندارد و خارج از آن پوشه هیچ‌چیز را لمس نمی‌کند.
 
-در حال کار روی یک پکیج AppX هستیم که از طریق API استقرار **کنار** ترمینال Store نصب می‌شود، تا ترمینال RTL یک ورودی در منوی Start بگیرد بدون اینکه نصب Store دست بخورد.
+یک `install.ps1` اختیاری داخل zip قرار دارد که بدون دست زدن به نصب Store، یک ورودی در منوی Start به بیلد می‌دهد؛ بنابراین کار روی AppX بالا تنها راه رسیدن به آن نیست.
 
 ### چه چیزی تغییر کرده
 

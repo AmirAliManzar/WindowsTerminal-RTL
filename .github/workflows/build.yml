@@ -102,6 +102,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $dir = "packaged/WindowsTerminal-RTL-${{ matrix.arch }}"
           if (Test-Path $dir) {
+            # Ship the installer beside the exe so the zip is not just a folder
+            # the user has to hunt for: install.ps1 gives it a Start menu entry
+            # and carries their existing settings over.
+            Copy-Item scripts/install.ps1 -Destination $dir -Force
             # A zip, not a raw folder upload: the artifact API is per-file and a
             # portable build is ~90 files.
             Compress-Archive -Path "$dir/*" -DestinationPath "artifacts/${{ matrix.asset }}.zip" -Force
