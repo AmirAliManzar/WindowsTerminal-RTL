@@ -86,10 +86,11 @@ foreach ($f in Get-ChildItem (Join-Path $here 'tools\bidi-probe') -Filter *.cpp)
     New-Item -ItemType Directory -Force -Path (Join-Path $src 'tools\bidi-probe') | Out-Null
     Copy-Item $f.FullName (Join-Path $src "tools\bidi-probe\$($f.Name)") -Force
 }
-# The overlay triplets. These exist on main but not at v1.24.11911.0, so the
-# patch cannot add them - it can only modify what is already there. They have to
-# arrive as files, and they have to land before vcpkg runs, because the triplet
-# is what decides which toolset the dependencies are built against.
+# The overlay triplets. v1.25.2733.0 already ships all three of these and the
+# fuzzing ones beside them, so this copy is a no-op there; v1.24.11911.0 shipped
+# none of them and needed all three. Keeping the copy lets the one build script
+# cover both refs, and it has to land before vcpkg runs because the triplet is
+# what decides which toolset the dependencies are built against.
 foreach ($f in Get-ChildItem (Join-Path $here 'dep\vcpkg-overlay-triplets') -Filter *.cmake -ErrorAction SilentlyContinue) {
     Copy-Item $f.FullName (Join-Path $src "dep\vcpkg-overlay-triplets\$($f.Name)") -Force
 }

@@ -1,242 +1,44 @@
-diff --git a/build/scripts/Merge-PriFiles.ps1 b/build/scripts/Merge-PriFiles.ps1
-index 3a9985936..952e2b4ae 100644
---- a/build/scripts/Merge-PriFiles.ps1
-+++ b/build/scripts/Merge-PriFiles.ps1
-@@ -14,11 +14,41 @@ Param(
-     $IndexName = "Application",
- 
-     [Parameter(HelpMessage="Path to makepri.exe")]
--    [ValidateScript({Test-Path $_ -Type Leaf})]
-     [string]
--    $MakePriPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\MakePri.exe"
-+    $MakePriPath
- )
- 
-+# LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): the SDK the default below
-+# used to pin is not installed on every build machine, and the script died
-+# with 'not recognized as the name of a cmdlet' before doing any work.
-+# Try that path first - it is still right where the SDK exists - then walk
-+# the installed Kits tree. The host directory follows
-+# PROCESSOR_ARCHITECTURE rather than the target platform, because makepri
-+# is a host tool: a PRI is architecture-independent data, and the ARM64
-+# binary cannot run on an x64 runner. Mirrors _MakePriHostDir in
-+# common.build.post.props so the two cannot drift.
-+if (-not $MakePriPath) {
-+    $pinned = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\MakePri.exe"
-+    if (Test-Path $pinned -Type Leaf) {
-+        $MakePriPath = $pinned
-+    } else {
-+        $hostDir = switch ($env:PROCESSOR_ARCHITECTURE) {
-+            'AMD64' { 'x64' }
-+            'ARM64' { 'arm64' }
-+            'x86'   { 'x86' }
-+            default { $env:PROCESSOR_ARCHITECTURE }
-+        }
-+        $kits = "C:\Program Files (x86)\Windows Kits\10\bin"
-+        $found = Get-ChildItem $kits -Directory -ErrorAction SilentlyContinue |
-+            Sort-Object Name -Descending |
-+            ForEach-Object { Join-Path $_.FullName "$hostDir\makepri.exe" } |
-+            Where-Object { Test-Path $_ -Type Leaf } |
-+            Select-Object -First 1
-+        if (-not $found) { throw "makepri.exe not found under $kits for $hostDir" }
-+        $MakePriPath = $found
-+    }
-+}
-+
- $ErrorActionPreference = 'Stop'
- 
- $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "tmp$([Convert]::ToString((Get-Random 65535),16).PadLeft(4,'0')).tmp"
-diff --git a/src/common.build.post.props b/src/common.build.post.props
-index ec143372f..5dedf4e00 100644
---- a/src/common.build.post.props
-+++ b/src/common.build.post.props
-@@ -116,4 +116,97 @@
- 
-   <!-- For C++ projects, bring in the vcpkg targets at the end -->
-   <Import Project="$(VcpkgRoot)/scripts/buildsystems/msbuild/vcpkg.targets" Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
-+
-+  <!-- ===================================================================
-+       LOCAL BUILD ADAPTATION (WindowsTerminal-RTL)
-+
-+       One workaround, guarded by a command-line flag so that dropping the flag
-+       restores upstream behaviour exactly. It does not touch terminal code.
-+
-+       Do NOT disable the Store toolchain to get an unpackaged binary.
-+       WindowsTerminal.vcxproj already sets ApplicationType="Windows Store",
-+       WindowsStoreApp=true, WindowsAppContainer=false, _NoWinAPIFamilyApp=true and
-+       _VC_Target_Library_Platform=Desktop, and cppwinrt.build.pre.props says what
-+       that means: "we're not building a true universal app, we're building a
-+       desktop application with xaml". The Store build is what makes the XAML
-+       compiler, GeneratedFilesDir, the UAP platform winmds and the include paths
-+       for the generated XAML sources all resolve. Passing -p:WindowsStoreApp=false
-+       or -p:ApplicationType= sets a *global* property, which beats the value in
-+       the project, and every one of those then has to be re-created by hand.
-+
-+       The exception is MakePri.exe: this machine's Windows SDK has no
-+       References\10.0.26100.0\Windows.props and Platforms\, and winsdksetup.exe
-+       refuses to repair an SDK it already believes is installed (exit 1001), so
-+       the probe for MakePri - a tool only the PRI/MSIX pipeline needs - fails with
-+       APPX3217 / MSB4044 "MakePriExeFullPath". Supply the path and skip the probe.
-+       MSBuild keeps the last definition of a target name, and this file is
-+       imported after the Appx targets, so ours wins.
-+
-+       The path is the HOST's MakePri, not the target's. A resource index maps
-+        resource paths to files and carries an architecture qualifier as data; it
-+        contains no code, so the machine that writes it does not constrain what it
-+        may contain. The SDK ships makepri.exe per architecture and the ARM64 one
-+        cannot be executed on x64, so asking for $(Platform)'s copy fails as soon
-+        as ARM64 is cross-compiled:
-+
-+          error MSB6003: The specified task executable "MakePri.exe" could not be
-+          run. The specified executable is not a valid application for this OS
-+          platform.
-+
-+        MakePriArchitecture stays $(Platform): that one is the qualifier recorded
-+        in the index, and it does have to be the target's.
-+       =================================================================== -->
-+  <Target Name="_GetSdkToolsPathsFromSdk"
-+          Condition="'$(LocalBuildSkipAppxSdkToolProbe)'=='true'">
-+    <PropertyGroup>
-+      <!-- PROCESSOR_ARCHITECTURE is an environment property MSBuild exposes, and
-+           the names are the SDK's directory names once translated, which is why
-+           AMD64 maps to x64 rather than to itself. -->
-+      <_MakePriHostDir Condition="'$(_MakePriHostDir)'=='' And ('$(PROCESSOR_ARCHITECTURE)'=='AMD64' Or '$(PROCESSOR_ARCHITECTURE)'=='x64')">x64</_MakePriHostDir>
-+      <_MakePriHostDir Condition="'$(_MakePriHostDir)'=='' And '$(PROCESSOR_ARCHITECTURE)'=='ARM64'">arm64</_MakePriHostDir>
-+      <_MakePriHostDir Condition="'$(_MakePriHostDir)'=='' And '$(PROCESSOR_ARCHITECTURE)'=='x86'">x86</_MakePriHostDir>
-+      <_MakePriHostDir Condition="'$(_MakePriHostDir)'==''">$(Platform)</_MakePriHostDir>
-+      <MakePriExeFullPath Condition="'$(MakePriExeFullPath)'==''">$(WindowsSdkDir)bin\10.0.26100.0\$(_MakePriHostDir)\makepri.exe</MakePriExeFullPath>
-+      <MakePriArchitecture Condition="'$(MakePriArchitecture)'==''">$(Platform)</MakePriArchitecture>
-+    </PropertyGroup>
-+  </Target>
-+
-+  <Target Name="_GetAppxManifestSchemaItemsFromSdk"
-+          Condition="'$(LocalBuildSkipAppxSdkToolProbe)'=='true'" />
-+
-+
-+
-+<!-- (2b) Explicit link/lib target machine.
-+       The Store platform props that normally pin %(Link.TargetMachine) live at
-+         VC\v170\Application Type\Windows Store\10.0\Platforms\<arch>\
-+       and are reached through $(_PlatformFolder). For a project that sets
-+       OpenConsoleUniversalApp=true (so AppContainerApplication=true), that chain
-+       does not resolve here and the machine type is never set, which shows up as
-+       "warning LNK4068: /MACHINE not specified; defaulting to X86" followed by
-+       "fatal error LNK1112: module machine type 'x64' conflicts with target
-+       machine type 'x86'" on the first x64 object.
-+
-+       Same '== ''' guard the SDK's own Platform.Common.props uses, so if it ever
-+       does resolve, this stays inert. -->
-+  <PropertyGroup Condition="'$(LocalBuildExplicitTargetMachine)'=='true'">
-+    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='x64'">MachineX64</_LocalTargetMachine>
-+    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='ARM64'">MachineARM64</_LocalTargetMachine>
-+    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='ARM'">MachineARM</_LocalTargetMachine>
-+    <_LocalTargetMachine Condition="'$(_LocalTargetMachine)'=='' And '$(Platform)'=='Win32'">MachineX86</_LocalTargetMachine>
-+  </PropertyGroup>
-+
-+  <ItemDefinitionGroup Condition="'$(LocalBuildExplicitTargetMachine)'=='true'">
-+    <Link Condition="'$(_LocalTargetMachine)'!=''">
-+      <TargetMachine Condition="'%(TargetMachine)'==''">$(_LocalTargetMachine)</TargetMachine>
-+    </Link>
-+    <Lib Condition="'$(_LocalTargetMachine)'!=''">
-+      <TargetMachine Condition="'%(TargetMachine)'==''">$(_LocalTargetMachine)</TargetMachine>
-+    </Lib>
-+    <ImpLib Condition="'$(_LocalTargetMachine)'!=''">
-+      <TargetMachine Condition="'%(TargetMachine)'==''">$(_LocalTargetMachine)</TargetMachine>
-+    </ImpLib>
-+  </ItemDefinitionGroup>
-+
-+
-+
- </Project>
 diff --git a/src/common.build.pre.props b/src/common.build.pre.props
-index b3f57bf23..08e4bd042 100644
+index e1b03c9b2..5d7f33cb4 100644
 --- a/src/common.build.pre.props
 +++ b/src/common.build.pre.props
-@@ -75,7 +75,18 @@
-   </ItemGroup>
- 
-   <PropertyGroup Label="Globals">
--    <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' == ''">10.0.22621.0</WindowsTargetPlatformVersion>
-+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): this branch pins the
-+       Windows SDK to 10.0.22621.0, which is not installed on every build
-+       machine - a fresh runner has 10.0.26100.0 only, and every project then
-+       dies with MSB8036. Ask the installed Kits tree which SDKs it has, the
-+       same lookup Microsoft.Cpp.WindowsSDK.targets makes, and take one that is
-+       actually present. The original Condition is kept, so a version supplied
-+       on the command line still wins.
-+
-+       Set -p:LocalBuildSdkAutoDetect=false to pin 10.0.22621.0 again. -->
-+  <_LocalSdkDirs Condition="'$(LocalBuildSdkAutoDetect)' != 'false' And '$(WindowsSdkDir)' != '' And Exists('$(WindowsSdkDir)\Lib')">$([System.IO.Directory]::GetDirectories('$(WindowsSdkDir)\Lib'))</_LocalSdkDirs>
-+  <_LocalSdkFirst Condition="'$(_LocalSdkDirs)' != ''">$([System.String]::Copy('$(_LocalSdkDirs)').Split(';')[0])</_LocalSdkFirst>
-+  <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' == '' And '$(_LocalSdkFirst)' != ''">$([System.IO.Path]::GetFileName('$(_LocalSdkFirst)'))</WindowsTargetPlatformVersion>
-     <WindowsTargetPlatformMinVersion Condition="'$(WindowsTargetPlatformMinVersion)' == ''">10.0.18362.0</WindowsTargetPlatformMinVersion>
-   </PropertyGroup>
- 
-@@ -95,7 +106,13 @@
- 
-   <!-- For ALL build types-->
-   <PropertyGroup Label="Configuration">
--    <PlatformToolset>v143</PlatformToolset>
-+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): this branch pins v143, which
-+         a newer Visual Studio does not install the UWP build tools for, and every
-+         WinRT project then fails with MSB8020. Choose from the installed version
-+         instead, the way a later upstream revision does, so the same file builds
-+         on both a VS 2022 image (v143) and a VS 18 one (v145). -->
-+    <PlatformToolset Condition="'$(VisualStudioVersion)' >= '18.0'">v145</PlatformToolset>
-+    <PlatformToolset Condition="'$(PlatformToolset)' == ''">v143</PlatformToolset>
-     <CharacterSet>Unicode</CharacterSet>
-     <LinkIncremental>false</LinkIncremental>
-     <PreferredToolArchitecture>x64</PreferredToolArchitecture>
-@@ -136,6 +153,17 @@
+@@ -136,6 +136,17 @@
          C26494: Variable 'index' is uninitialized. Always initialize an object (type. 5).
            This diagnostic is broken in VS 17.7 which our CI currently uses. It's fixed in 17.8.
        -->
 +      <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL):
-+           MSVC 19.44 (VS 2022 17.14) is newer than the toolset this branch is
-+           pinned to and emits diagnostics that the existing upstream code
-+           deliberately triggers. /WX then turns them into errors. All are
-+           pre-existing upstream code, unrelated to the RTL change:
-+             C4706: assignment used as a condition   (TerminalSelection.cpp:269)
-+             C4245: signed/unsigned mismatch on `return E_FAIL` (AzureConnection.cpp:457)
-+             C4456: a declaration hides a previous local (TextMenuFlyout.cpp)
-+             C4458: a declaration hides a class member      (VsSetupConfiguration.h:182)
-+           Guarded so upstream behaviour is restored by default. -->
++           MSVC newer than the toolset this branch builds against emits
++           diagnostics that the upstream code deliberately triggers, and
++           /WX turns them into errors. All are pre-existing upstream code:
++             C4245: signed/unsigned on `return E_FAIL`
++             C4706: assignment used as a condition
++             C4456: a declaration hides a previous local
++             C4458: a declaration hides a class member
++             C4875: deprecated GSL_SUPPRESS form in the pinned ms-gsl
++           Guarded, so upstream behaviour is restored by default. -->
 +      <DisableSpecificWarnings Condition="'$(LocalBuildDisableNewerMsvcWarnings)'=='true' Or ('$(LocalBuildDisableNewerMsvcWarnings)'=='' And '$(VisualStudioVersion)' &gt;= '18.0')">4245;4706;4456;4458;4875;%(DisableSpecificWarnings)</DisableSpecificWarnings>
        <DisableSpecificWarnings>4201;4312;4467;5105;26434;26445;26456;26478;26494;%(DisableSpecificWarnings)</DisableSpecificWarnings>
        <PreprocessorDefinitions>_WINDOWS;EXTERNAL_BUILD;_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
        <SDLCheck>true</SDLCheck>
-@@ -267,6 +295,46 @@
+@@ -266,6 +277,32 @@
    </ItemDefinitionGroup>
  
    <Import Project="$(MSBuildThisFileDirectory)..\build\rules\Branding.targets" />
 +  <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): de-duplicate @(ReferencePath)
 +       before the XAML compiler sees it.
 +
-+       MarkupCompilePass1 passes @(ReferencePath) straight to the XAML compiler as
-+       its reference assemblies. In this tree that list contains the same file
-+       more than once: a winmd that is named both by an explicit
-+       <Reference Include="..."><IsWinMDFile>true</IsWinMDFile> item and by a
-+       ProjectReference arrives twice, once with IsWinMDFile set and once
-+       without. Microsoft.Terminal.Settings.Editor is the project where this
-+       actually bites, because two *different* files there share the assembly
-+       simple name Microsoft.Terminal.Control:
-+
-+         bin\<plat>\<cfg>\Microsoft.Terminal.Control\Microsoft.Terminal.Control.winmd
-+         bin\<plat>\<cfg>\Microsoft.Terminal.Control.Lib\Microsoft.Terminal.Control.winmd
-+
-+       Anything the compiler keys off that name then resolves inconsistently, and
-+       the failure surfaces as an internal .NET exception rather than something
-+       actionable:
++       MarkupCompilePass1 passes @(ReferencePath) to the XAML compiler as its
++       reference assemblies. In this tree the same file can appear twice - a
++       winmd named both by an explicit <Reference> and by a ProjectReference -
++       and in Microsoft.Terminal.Settings.Editor two *different* files share
++       the simple name Microsoft.Terminal.Control. Anything keying off that
++       name then resolves inconsistently and the failure is not actionable:
 +
 +         Microsoft.Windows.UI.Xaml.Common.targets(354,5): Xaml Internal Error
 +         error WMC9999: Value cannot be null. Parameter name: name
 +
-+       Removing the repeats is not observable to the C++ side: KeepDuplicates
-+       keeps the original items, so every piece of metadata on the survivors
-+       (WinMDFile, LinkLibraryDependencies, ...) is carried over untouched. The
-+       set of distinct reference assemblies is exactly what it was.
-+
-+       Set -p:LocalBuildTrimDuplicateRefs=false to get upstream's behaviour back. -->
++       KeepDuplicates keeps the original items, so all their metadata is
++       carried over. Set -p:LocalBuildTrimDuplicateRefs=false to opt out. -->
 +  <Target Name="LocalBuildTrimDuplicateReferencePaths"
 +          BeforeTargets="MarkupCompilePass1"
 +          Condition="'$(LocalBuildTrimDuplicateRefs)'!='false'">
@@ -248,37 +50,19 @@ index b3f57bf23..08e4bd042 100644
 +      <ReferencePath Include="@(_LocalBuildUniqueRef)" />
 +    </ItemGroup>
 +  </Target>
-+
  
    <PropertyGroup Label="vcpkg">
      <VcpkgEnableManifest>true</VcpkgEnableManifest>
-@@ -280,6 +348,13 @@
+@@ -279,6 +316,12 @@
  
      <VcpkgAdditionalInstallOptions>--x-feature=terminal</VcpkgAdditionalInstallOptions>
      <VcpkgAdditionalInstallOptions Condition="'$(Configuration)'=='Fuzzing'">$(VcpkgAdditionalInstallOptions) --overlay-triplets=$(SolutionDir)\dep\vcpkg-overlay-triplets\fuzzing</VcpkgAdditionalInstallOptions>
-+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): the plain static triplets
-+         this project adds next to the fuzzing ones. Without this line vcpkg
-+         resolves x64-windows-static to its own built-in triplet and builds the
-+         dependencies with whatever toolset is newest on the machine, which is
-+         newer than the v143 pinned above; linking a v143 terminal against
-+         dependencies built with a different toolset is not reliable. -->
++    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): the plain static
++         triplets this repo already ships next to the fuzzing ones. Without
++         this line vcpkg resolves x64-windows-static to its own built-in
++         triplet and builds the dependencies with whatever toolset is newest
++         on the machine, which may not be the one the terminal is built with. -->
 +    <VcpkgAdditionalInstallOptions>$(VcpkgAdditionalInstallOptions) --overlay-triplets=$(SolutionDir)\dep\vcpkg-overlay-triplets</VcpkgAdditionalInstallOptions>
      <!--
        Since we link everything statically, we don't need to copy anything.
        This saves running a powershell script for every project.
-diff --git a/src/wap-common.build.pre.props b/src/wap-common.build.pre.props
-index f99f1e164..24ae01abe 100644
---- a/src/wap-common.build.pre.props
-+++ b/src/wap-common.build.pre.props
-@@ -63,7 +63,10 @@
-   <Import Project="$(WapProjPath)\Microsoft.DesktopBridge.props" />
- 
-   <PropertyGroup>
--    <TargetPlatformVersion>10.0.22621.0</TargetPlatformVersion>
-+    <!-- LOCAL BUILD ADAPTATION (WindowsTerminal-RTL): pinned to 10.0.22621.0, which
-+       the build machine may not have. Follow the SDK that the C++ projects
-+       resolved above rather than naming a second version. -->
-+  <TargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' != ''">$(WindowsTargetPlatformVersion)</TargetPlatformVersion>
-     <TargetPlatformMinVersion>10.0.18362.0</TargetPlatformMinVersion>
-     <DefaultLanguage>en-US</DefaultLanguage>
-   </PropertyGroup>

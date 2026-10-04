@@ -74,7 +74,7 @@ fn main() {
 
     // Supply the version the bundled DLLs were built for unless the caller
     // already named one. Trimmed: the file on disk ends with a newline, and
-    // PowerShell would then see "1.24.11911.0\n" and not match anything.
+    // PowerShell would then see "1.25.2733.0\n" and not match anything.
     let required = REQUIRED_VERSION.trim();
     if !required.is_empty()
         && !args

@@ -23,7 +23,6 @@ jobs:
           - os: windows-latest
             arch: x64
             asset: WindowsTerminal-RTL-x64
-            patcher: WindowsTerminal-RTL-patcher-x64.exe
           # ARM64, cross-compiled from the x64 runner rather than built on
           # windows-11-arm.
           #
@@ -44,7 +43,6 @@ jobs:
           - os: windows-latest
             arch: arm64
             asset: WindowsTerminal-RTL-arm64
-            patcher: WindowsTerminal-RTL-patcher-arm64.exe
 
     env:
       # vcpkg resolves versions from git; the CLI fetch is far more reliable
@@ -84,20 +82,12 @@ jobs:
               -Arch ${{ matrix.arch }} `
               -OutDir "${{ github.workspace }}\packaged"
 
-      # No dependencies, links shell32 directly, so it builds in seconds for the
-      # same architecture and comes out a couple of hundred kilobytes.
-      - name: Build the patcher
+      # Record the Windows Terminal build these DLLs came from, so the
+      # README and the release can talk about a specific version.
+      - name: Record build info
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          cargo build --release --manifest-path patcher/Cargo.toml
-          $src = 'patcher/target/release/WindowsTerminal-RTL-patcher.exe'
-          if (-not (Test-Path $src)) { throw "patcher not built: $src" }
-          $out = "artifacts/${{ matrix.patcher }}"
-          Copy-Item $src $out -Force
-          # Record the Windows Terminal build these DLLs came from, so the
-          # patcher and the README can talk about a specific version.
           @{
             arch   = '${{ matrix.arch }}'
             upstream_ref = (Get-Content UPSTREAM_REF -Raw).Trim()
@@ -150,7 +140,7 @@ jobs:
             [ -d "$src" ] || continue
             # The collector writes a marker even when the build failed, so check
             # what it actually managed to produce.
-            for f in "$src"/*.zip "$src"/*patcher*.exe "$src"/build-info-*.json "$src"/probes-*.txt; do
+            for f in "$src"/*.zip "$src"/build-info-*.json "$src"/probes-*.txt; do
               [ -e "$f" ] || continue
               cp -f "$f" release-assets/
             done

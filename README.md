@@ -12,8 +12,6 @@ Prebuilt files are on the [Releases](../../releases) page:
 
 - `WindowsTerminal-RTL-x64.zip` portable build for 64-bit Intel/AMD
 - `WindowsTerminal-RTL-arm64.zip` portable build for Windows on ARM
-- `WindowsTerminal-RTL-patcher-x64.exe` patcher for x64 installations
-- `WindowsTerminal-RTL-patcher-arm64.exe` patcher for ARM64 installations
 - `windowsterminal-rtl.patch` the RTL patch, for building Windows Terminal yourself
 - `build-unpackaged.patch` the build changes needed to produce an unpackaged build
 
@@ -28,64 +26,35 @@ Download the build for your architecture, unzip it anywhere, and run
 `WindowsTerminal.exe`. Nothing is installed and nothing outside that folder is
 touched.
 
-## Patching an installed copy
+## Patching an installed copy — and why it is not possible
 
-If you would rather keep using the terminal you already have from the Microsoft
-Store, run the patcher for your architecture. It asks for administrator rights,
-so you will see a UAC prompt - that is normal, and it is required because the
-installed files live in `C:\Program Files\WindowsApps`.
+An honest note, because the alternative is shipping a tool that fails in a way
+that looks like the user's fault: **replacing files inside a Store-installed
+terminal is not possible on modern Windows.**
 
-**This release is built for Windows Terminal `1.24.11911.0`** (see
-`REQUIRED_VERSION`). The patcher refuses to patch any other version, because the
-Atlas renderer is C++ with no ABI between releases: dropping a `1.24`
-`TerminalApp.dll` into a `1.25` install is not a patch, it is a corruption. If
-your Store copy is a different version, either install `1.24.11911.0` or build
-from the matching upstream ref yourself (see "Building from source").
+Store packages live in `C:\Program Files\WindowsApps`, which is protected by
+the Windows Container Isolation File System (`wcifs`) filter driver. We
+verified this directly on a fresh install. Taking ownership of the entire
+package recursively (`takeown /R /A /D Y`) succeeds — 265 files now owned by
+Administrators. Granting Administrators full control recursively
+(`icacls /grant *S-1-5-32-544:F /T`) also succeeds — 265 files processed, zero
+failures. Then creating a single new file in that same folder is still denied.
+`wcifs` ignores ownership and ACLs entirely; it blocks writes from any process
+that is not running inside the package's own container. The `takeown` recipe
+that works on Windows 8 and early Windows 10 does not work on anything that
+ships `wcifs`.
 
-The patcher:
+The only writer `wcifs` trusts is the AppX deployment API — the same path the
+Store itself uses. Going through it requires a package signed by Microsoft to
+replace the Store install in place, which is not something this project can do.
 
-1. Checks the installed version matches `REQUIRED_VERSION`, and stops if it does not
-2. Backs up the DLLs it is about to replace into
-   `%ProgramData%\WindowsTerminal-RTL\backup\`
-3. Replaces them with the patched ones from the matching portable build
-4. Relaunches the terminal
+**The portable build above is the working alternative.** It runs from any
+folder, reads your existing settings and fonts, needs no installation, and
+touches nothing outside that folder.
 
-You can also run it from PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\patch-wt.ps1 -LocalDir C:\path\to\WindowsTerminal-RTL-x64
-```
-
-Useful options:
-
-```powershell
-# Put the original files back
-.\WindowsTerminal-RTL-patcher.exe -Revert
-
-# Patch a copy somewhere else, e.g. a backup install
-.\WindowsTerminal-RTL-patcher.exe -PackageDir "C:\Path\To\Microsoft.WindowsTerminal_1.24.11911.0_x64__8wekyb3d8bbwe"
-
-# Do not relaunch the terminal afterwards
-.\WindowsTerminal-RTL-patcher.exe -NoRestart
-```
-
-### A caveat, stated plainly
-
-The portable build is built **unpackaged**, while the Store version is packaged.
-The DLLs are therefore not byte-identical builds - measured on this machine,
-`Microsoft.Terminal.UI.dll` is 230 KB in the Store install and 215 KB here. They
-are however built from the **same upstream commit**, `v1.24.11911.0`, so the
-interfaces line up; the patcher backs everything up first and `-Revert` puts it
-back.
-
-If the patched terminal will not start, run the patcher again with `-Revert`.
-
-### Windows Terminal updates
-
-A Store update replaces the DLLs, which removes the patch and very likely changes
-the version, so the patcher will then refuse rather than patch across versions.
-After an update, either roll the Store copy back to `1.24.11911.0`, or wait for a
-release of this project built against the new version.
+Work is underway on an AppX package that installs *alongside* the Store
+terminal through the deployment API, so the RTL terminal gets a Start menu
+entry without touching the Store install.
 
 ## What the patch changes
 
@@ -163,7 +132,6 @@ Requirements:
 - Visual Studio 2022 or newer with the C++ workload
 - The Windows 10 SDK
 - Python 3
-- Rust, for the patcher
 
 The Windows Terminal version being patched is in `UPSTREAM_REF`. The build script
 clones it, applies the patch, and produces the portable build:
@@ -176,13 +144,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1 -Arch x64
 powershell -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1 -Arch arm64
 ```
 
-Build the patcher:
-
-```powershell
-cargo build --release --manifest-path patcher\Cargo.toml
-```
-
-Builds are done in CI on `windows-latest` and `windows-11-arm`.
+Builds are done in CI on `windows-latest`.
 
 ### A note on the build system
 
@@ -230,7 +192,8 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 - `WindowsTerminal-RTL-x64.zip` برای پردازنده‌های ۶۴ بیتی اینتل/AMD
 - `WindowsTerminal-RTL-arm64.zip` برای ویندوز روی ARM
-- `WindowsTerminal-RTL-patcher-x64.exe` و `WindowsTerminal-RTL-patcher-arm64.exe` برای اصلاح نسخهٔ نصب‌شده
+- `windowsterminal-rtl.patch` خود پچ RTL، برای بیلد گرفتن خودتان از Windows Terminal
+- `build-unpackaged.patch` تغییرات لازم برای تولید بیلد unpackaged
 
 نسخهٔ **پورتابل** نیازی به نصب ندارد. تنظیمات فعلی Windows Terminal شما را هم می‌خواند، پروفایل‌ها، تم‌ها، طرح‌رنگ‌ها و فونت‌هایتان حفظ می‌شوند:
 
@@ -240,24 +203,17 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 فایل zip را هرجا باز کنید و `WindowsTerminal.exe` را اجرا کنید.
 
-### اصلاح نسخهٔ نصب‌شده
+### اصلاح نسخهٔ نصب‌شده — و چرا ممکن نیست
 
-اگر ترمینال نصب‌شده از Store را نگه می‌دارید، Patcher مربوط به معماری سیستمتان را اجرا کنید. پنجرهٔ UAC ظاهر می‌شود؛ این طبیعی است، چون فایل‌های نصب‌شده داخل `C:\Program Files\WindowsApps` هستند و نوشتن در آن‌ها دسترسی ادمین می‌خواهد.
+یادداشت صادقانه، چون در غیر این صورت پروژه ابزاری منتشر می‌کند که شکستش شبیه تقصیر خود کاربر است: **جایگزینی فایل‌ها داخل یک ترمینال نصب‌شده از Store در ویندوزهای جدید ممکن نیست.**
 
-**این نسخه برای Windows Terminal `1.24.11911.0` ساخته شده** (فایل `REQUIRED_VERSION`). Patcher از اصلاح هر نسخهٔ دیگری خودداری می‌کند، چون رندرکنندهٔ Atlas به زبان C++ نوشته شده و بین نسخه‌ها ABI پایداری ندارد: گذاشتن `TerminalApp.dll` نسخهٔ `1.24` داخل یک نصب `1.25` اصلاح نیست، خراب کردن است. اگر نسخهٔ Store شما چیز دیگری است، یا `1.24.11911.0` را نصب کنید یا خودتان از همان ref نسخهٔ بالا بیلد بگیرید (بخش «بیلد از سورس» را ببینید).
+بسته‌های Store داخل `C:\Program Files\WindowsApps` هستند که توسط درایور فیلتر «سیستم فایل ایزولهٔ ویندوز» (`wcifs`) محافظت می‌شود. ما این را روی یک نصب تازه خودمان تست کردیم: گرفتن مالکیت کل پکیج به‌صورت بازگشتی (`takeown /R /A /D Y`) موفق می‌شود — ۲۶۵ فایل به مالکیت مدیران درمی‌آید. دادن دسترسی کامل به مدیران به‌صورت بازگشتی (`icacls /grant *S-1-5-32-544:F /T`) هم موفق می‌شود — ۲۶۵ فایل پردازش، صفر شکست. با این حال ساختن یک فایل جدید در همان پوشه همچنان رد می‌شود. `wcifs` اصلاً به مالکیت و ACL نگاه نمی‌کند؛ نوشتن از هر پروسه‌ای که داخل کانتینر خود پکیج اجرا نمی‌شود را مسدود می‌کند. همان دستور `takeown` که در ویندوز ۸ و ویندوز ۱۰ٔ اولیه کار می‌کرد، در سیستمی که `wcifs` دارد دیگر کار نمی‌کند.
 
-مراحل کار Patcher:
+تنها نوشتنی که `wcifs` به آن اعتماد می‌کند API استقرار AppX است — همان مسیری که خود Store از آن استفاده می‌کند. استفاده از آن برای جایگزینی نصب Store در جای خودش نیازمند پکیجی امضاشده توسط مایکروسافت است که این پروژه نمی‌تواند تولید کند.
 
-۱. نسخهٔ نصب‌شده را با `REQUIRED_VERSION` چک می‌کند و اگر یکی نباشد متوقف می‌شود
-۲. قبل از هر تغییری از DLLها پشتیبان می‌گیرد در `%ProgramData%\WindowsTerminal-RTL\backup\`
-۳. فایل‌ها را با نسخهٔ اصلاح‌شده جایگزین می‌کند
-۴. ترمینال را دوباره باز می‌کند
+**بیلد پورتابل بالا جایگزین کارآمد است.** از هر پوشه‌ای اجرا می‌شود، تنظیمات و فونت‌های فعلی شما را می‌خواند، نیازی به نصب ندارد و خارج از آن پوشه هیچ‌چیز را لمس نمی‌کند.
 
-⚠️ **یک نکتهٔ مهم:** بیلد پورتابل ما **unpackaged** است ولی نسخهٔ Store **packaged**، پس DLLها بایت‌به‌بایت یکی نیستند (مثلاً `Microsoft.Terminal.UI.dll` در Store حدود ۲۳۰ کیلوبایت و در اینجا ۲۱۵ کیلوبایت است). ولی هر دو از **همان کامیتی upstream** یعنی `v1.24.11911.0` ساخته شده‌اند، پس رابط‌ها با هم می‌خوانند. در هر حال Patcher ابتدا پشتیبان می‌گیرد و `-Revert` همه‌چیز را برمی‌گرداند.
-
-اگر ترمینال اصلاح‌شده بالا نیامد، دوباره با `-Revert` اجرا کنید.
-
-با هر به‌روزرسانی رسمی، DLLها جایگزین می‌شوند و پچ از بین می‌رود و احتمالاً نسخه هم عوض می‌شود، پس Patcher به‌جای اینکه نسخه‌های مختلف را با هم مخلوط کند، متوقف می‌شود. بعد از آپدیت یا Store را به `1.24.11911.0` برگردانید، یا منتظر نسخهٔ جدید این پروژه بمانید.
+در حال کار روی یک پکیج AppX هستیم که از طریق API استقرار **کنار** ترمینال Store نصب می‌شود، تا ترمینال RTL یک ورودی در منوی Start بگیرد بدون اینکه نصب Store دست بخورد.
 
 ### چه چیزی تغییر کرده
 
