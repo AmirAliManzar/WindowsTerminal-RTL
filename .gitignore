@@ -16,3 +16,6 @@ desktop.ini
 # The upstream tree is cloned by scripts/build-portable.ps1, never committed
 terminal/
 vcpkg/
+
+# The installer's csc.exe output; built by scripts/build-installer.ps1
+installer/out/

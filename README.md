@@ -10,8 +10,8 @@ This patch fixes the problem at the text-shaping layer, in the Atlas renderer, s
 
 Prebuilt files are on the [Releases](../../releases) page:
 
-- `install-latest.ps1` the small installer — a few kilobytes that download and
-  install the right build for you
+- `WindowsTerminal-RTL-Installer.exe` the installer — one file, downloads and
+  installs the right build for you
 - `WindowsTerminal-RTL-x64.zip` portable build for 64-bit Intel/AMD
 - `WindowsTerminal-RTL-arm64.zip` portable build for Windows on ARM
 - `windowsterminal-rtl.patch` the RTL patch, for building Windows Terminal yourself
@@ -26,9 +26,10 @@ configuration, so your profiles, themes, colour schemes and fonts carry over:
 
 Download the build for your architecture and unzip it anywhere.
 
-- **Small installer:** grab `install-latest.ps1` from the Releases page,
-  right-click → *Run with PowerShell*. It detects your architecture, downloads
-  the matching build, verifies it, and installs it. This is the lightest way in.
+- **Installer:** grab `WindowsTerminal-RTL-Installer.exe` from the Releases page
+  and double-click it. It detects your architecture, downloads the matching
+  build, verifies it against its sha256, and installs it. No admin rights, and
+  the Store terminal is untouched. Re-run it with `--uninstall` to remove it.
 - **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
   and nothing outside that folder is touched.
 - **With a Start menu entry:** the zip also carries `install.ps1`. Right-click
@@ -202,6 +203,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 از بخش [Releases](../../releases) نسخهٔ مناسب سیستمتون رو بگیرید:
 
+- `WindowsTerminal-RTL-Installer.exe` فایل نصب — یک فایل، بیلد مناسب سیستم شما را دانلود و نصب می‌کند
 - `WindowsTerminal-RTL-x64.zip` برای پردازنده‌های ۶۴ بیتی اینتل/AMD
 - `WindowsTerminal-RTL-arm64.zip` برای ویندوز روی ARM
 - `windowsterminal-rtl.patch` خود پچ RTL، برای بیلد گرفتن خودتان از Windows Terminal
@@ -215,6 +217,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 فایل zip را هرجا باز کنید.
 
+- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. معماری سیستم را تشخیص می‌دهد، بیلد مناسب را دانلود می‌کند، با sha256 تأییدش می‌کند و نصب می‌کند. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. با `--uninstall` هم حذف می‌شود.
 - **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
 - **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
 

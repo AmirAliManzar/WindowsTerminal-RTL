@@ -114,6 +114,18 @@ jobs:
             "no portable build" | Out-File artifacts/collected-${{ matrix.arch }}.txt
           }
 
+      # The installer EXE. Built only on the x64 leg: it is architecture-neutral
+      # (it downloads whichever build matches the machine it runs on), so there
+      # is nothing to gain from a second copy and every asset upload costs a
+      # release slot.
+      - name: Build the installer EXE
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          & powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1 `
+              -OutDir "${{ github.workspace }}\artifacts"
+
       - uses: actions/upload-artifact@v4
         with:
           name: out-${{ matrix.arch }}
@@ -159,6 +171,16 @@ jobs:
           cp -f patch/windowsterminal-rtl.patch release-assets/
           cp -f patch/build-unpackaged.patch release-assets/
           cp -f UPSTREAM_REF release-assets/
+
+          # The installer EXE, built on the x64 leg. The one entry point most
+          # people want: a single file that downloads the build it installs.
+          # Kept alongside the PowerShell installer, which stays for anyone who
+          # prefers to read what a downloaded file does before running it.
+          if [ -f "dl/out-x64/WindowsTerminal-RTL-Installer.exe" ]; then
+            cp -f "dl/out-x64/WindowsTerminal-RTL-Installer.exe" release-assets/
+          else
+            echo "::warning::installer EXE missing; out-x64 artifact has no installer"
+          fi
 
           # The small installer: a few kilobytes that download the build it
           # installs, so the Releases page is not the only entry point.
