@@ -34,10 +34,13 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 $source  = @(
     (Join-Path $repoRoot 'installer\Program.cs'),
+    (Join-Path $repoRoot 'installer\InstallJob.cs'),
+    (Join-Path $repoRoot 'installer\Strings.cs'),
+    (Join-Path $repoRoot 'installer\WizardForm.cs'),
     (Join-Path $repoRoot 'installer\Properties\AssemblyInfo.cs')
 )
 $icon    = Join-Path $repoRoot 'assets\terminal-rtl.ico'
-$version = "0.0.5.0"
+$version = "0.0.6.0"
 
 foreach ($f in (@($source) + @($icon))) {
     if (-not (Test-Path -LiteralPath $f)) { throw "missing input: $f" }
@@ -65,13 +68,15 @@ Write-Host "  csc    : $csc"
 # csc.exe reads csc.rsp next to itself, which already references mscorlib,
 # System, System.Core, System.Web.Extensions, Microsoft.CSharp and the rest of
 # the BCL. Naming those again is a CS1703 duplicate-import error, so the only
-# things named explicitly here are the three the response file leaves out, and
+# things named explicitly here are the ones the response file leaves out, and
 # they are resolved from csc's own directory so the search order cannot pick a
 # stale copy from elsewhere on the machine.
 $extraRefs = @(
     'System.Net.Http.dll',
     'System.IO.Compression.dll',
-    'System.IO.Compression.FileSystem.dll'
+    'System.IO.Compression.FileSystem.dll',
+    'System.Windows.Forms.dll',
+    'System.Drawing.dll'
 ) | ForEach-Object { "/reference:" + (Join-Path (Split-Path -Parent $csc) $_) }
 
 foreach ($r in $extraRefs) {
@@ -81,10 +86,15 @@ foreach ($r in $extraRefs) {
 
 # ------------------------------------------------------------------ compile
 
-# /target:exe  a console app, so the user sees the download progress.
-# /platform:x64 the installer only ships for x64 and arm64 Windows; anycpu
-#               would let it start in a 32-bit host on an old box and then
-#               fail to write the shortcuts.
+# /target:winexe  a GUI app: double-clicked it opens the wizard and never
+#                 flashes a console window. Run from an existing shell it still
+#                 writes its progress to that shell, so --uninstall stays
+#                 scriptable.
+# /platform:anycpu the installer runs on x64 and on ARM64 Windows. The build
+#                 it downloads is chosen per machine, so the installer itself
+#                 must not be pinned to one.
+# /resource       embeds the RTL icon so the wizard can show it at full size
+#                 in its header, not just as the 16px taskbar glyph.
 # /win32icon   embeds the RTL badge so the EXE shows it in the taskbar, in
 #              Explorer and in the Start menu, instead of the generic one.
 # /win32manifest keeps it asInvoker and puts it on the modern common controls.
@@ -100,10 +110,11 @@ foreach ($r in $extraRefs) {
 $manifestArg = "/win32manifest:" + (Join-Path $repoRoot 'installer\app.manifest')
 $outArg      = "/out:" + $out
 $iconArg     = "/win32icon:" + $icon
+$iconResArg  = "/resource:" + $icon + ",terminal-rtl.ico"
 
 $cscArgs = @(
-    '/nologo', '/target:exe', '/platform:x64',
-    $outArg, $iconArg, $manifestArg,
+    '/nologo', '/target:winexe', '/platform:anycpu',
+    $outArg, $iconArg, $iconResArg, $manifestArg,
     '/checked-',
     '/filealign:512'
 ) + $extraRefs + $source

@@ -1,17 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-
   WindowsTerminal-RTL installer manifest.
 
-  The installer is a console application that does per-user installs into
-  %LOCALAPPDATA%. It never touches Program Files and never registers anything
-  machine-wide, so it stays at asInvoker: no UAC prompt, no admin needed.
+  The installer does per-user installs into %LOCALAPPDATA%. It never touches
+  Program Files and never registers anything machine-wide, so it stays at
+  asInvoker: no UAC prompt, no admin needed.
 
   comctl 6 keeps the standard controls on the modern visual style.
-
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="0.0.5.0" name="WindowsTerminal.RTL.Installer"
+  <assemblyIdentity version="0.0.6.0" name="WindowsTerminal.RTL.Installer"
     type="win32"/>
   <description>Windows Terminal RTL installer</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
