@@ -114,6 +114,25 @@ jobs:
             "no portable build" | Out-File artifacts/collected-${{ matrix.arch }}.txt
           }
 
+      # The single-file portable EXE: the whole build, fonts included, embedded
+      # in one launcher. One file per architecture, runnable from anywhere with
+      # no installer at all, which is the shape the portable build exists for.
+      # Guarded so a leg that failed to produce a terminal does not also fail
+      # here; the collector already wrote its own marker for that case.
+      - name: Build the single-file portable EXE
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $dir = "packaged/WindowsTerminal-RTL-${{ matrix.arch }}"
+          if (-not (Test-Path "$dir/WindowsTerminal.exe")) {
+            "no portable build to pack" | Out-File artifacts/no-sfx-${{ matrix.arch }}.txt
+            return
+          }
+          & powershell -ExecutionPolicy Bypass -File scripts\build-portable-sfx.ps1 `
+              -PayloadDir $dir `
+              -Arch ${{ matrix.arch }} `
+              -OutDir "${{ github.workspace }}\artifacts"
+
       # The installer EXE. Built only on the x64 leg: it is architecture-neutral
       # (it downloads whichever build matches the machine it runs on), so there
       # is nothing to gain from a second copy and every asset upload costs a
@@ -161,7 +180,7 @@ jobs:
             # questions about DirectWrite shaping and are noise to anyone who
             # just wants the terminal; they are still in the workflow artifacts
             # attached to the run.
-            for f in "$src"/*.zip "$src"/build-info-*.json; do
+            for f in "$src"/*.zip "$src"/build-info-*.json "$src"/WindowsTerminal-RTL-Portable-*.exe; do
               [ -e "$f" ] || continue
               cp -f "$f" release-assets/
             done

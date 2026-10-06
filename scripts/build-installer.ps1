@@ -40,7 +40,6 @@ $source  = @(
     (Join-Path $repoRoot 'installer\Properties\AssemblyInfo.cs')
 )
 $icon    = Join-Path $repoRoot 'assets\terminal-rtl.ico'
-$version = "0.0.6.0"
 
 foreach ($f in (@($source) + @($icon))) {
     if (-not (Test-Path -LiteralPath $f)) { throw "missing input: $f" }

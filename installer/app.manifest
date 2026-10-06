@@ -9,7 +9,7 @@
   comctl 6 keeps the standard controls on the modern visual style.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="0.0.6.0" name="WindowsTerminal.RTL.Installer"
+  <assemblyIdentity version="0.0.7.0" name="WindowsTerminal.RTL.Installer"
     type="win32"/>
   <description>Windows Terminal RTL installer</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
