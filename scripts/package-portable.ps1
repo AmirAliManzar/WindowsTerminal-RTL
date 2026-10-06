@@ -185,6 +185,27 @@ foreach ($item in (Get-ChildItem -LiteralPath $exeDir -Force -ErrorAction Silent
     }
 }
 
+# Fonts. Windows Terminal's NearbyFontLoading feature (Feature_NearbyFontLoading
+# in src/features.xml, AlwaysEnabled for the terminal) builds its font collection
+# from every .ttf sitting next to the .exe, and gives those files precedence over
+# the installed system fonts. So dropping Cascadia into the folder is enough to
+# make the terminal render its own typeface on a machine that has no fonts
+# installed at all - nothing is registered, no admin rights are needed, and a
+# Server Core box still gets text.
+#
+# This is the concrete answer to "it must carry everything it needs": the fonts
+# travel with the binary. The Arabic block coverage of Cascadia Code/Mono
+# (217 of 256 codepoints, including every Persian-specific letter) is what lets
+# Persian render before any system font is consulted. Italic is skipped on
+# purpose: it carries no Arabic at all, so shipping it would add weight without
+# adding a single RTL glyph.
+foreach ($font in (Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot '..\res\fonts') -Filter '*.ttf' -ErrorAction SilentlyContinue)) {
+    if ($font.Name -like '*Italic*') { continue }
+    $dest = Join-Path $OutDir $font.Name
+    Copy-Item -LiteralPath $font.FullName -Destination $dest -Force
+    Write-Host "[package] font : $($font.Name)"
+}
+
 # A marker so the launcher and any future patcher can tell this folder apart
 # from an installed copy.
 @{
