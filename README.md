@@ -12,6 +12,9 @@ Prebuilt files are on the [Releases](../../releases) page:
 
 - `WindowsTerminal-RTL-Installer.exe` the installer, one file that downloads
   and installs the right build for you
+- `WindowsTerminal-RTL-Portable-x64.exe` the whole x64 build as a single file,
+  no installer and no unzip: run it anywhere
+- `WindowsTerminal-RTL-Portable-arm64.exe` the same for Windows on ARM
 - `WindowsTerminal-RTL-x64.zip` portable build for 64-bit Intel/AMD
 - `WindowsTerminal-RTL-arm64.zip` portable build for Windows on ARM
 - `windowsterminal-rtl.patch` the RTL patch, for building Windows Terminal yourself
@@ -36,12 +39,32 @@ Download the build for your architecture and unzip it anywhere.
   untouched. Run it again with `--uninstall` to remove it.
 - **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
   and nothing outside that folder is touched.
+- **One file, not even a zip:** run `WindowsTerminal-RTL-Portable-x64.exe` (or
+  the `arm64` one) from wherever you put it. The whole build is inside that one
+  file. The first run unpacks it into
+  `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` and starts the terminal,
+  and every run after that is instant, because the payload is already on disk and
+  the marker still matches. Nothing is registered and no admin rights are asked
+  for. A new release replaces the previous folder, so two versions never mix.
 - **With a Start menu entry:** the zip also carries `install.ps1`. Right-click
   it → *Run with PowerShell*. It copies the build to
   `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL`, creates a Start menu shortcut
   (and a desktop one), and needs no admin rights. Run
   `install.ps1 -Uninstall` to remove it. Your settings are never touched either
   way, because a portable build reads the unpackaged settings path above.
+
+The build carries its own fonts. `CascadiaCode.ttf` and `CascadiaMono.ttf` sit
+next to `WindowsTerminal.exe`, and the terminal loads any `.ttf` beside its own
+executable *before* it asks the system for a typeface, so it still renders its
+text on a machine that has no fonts installed at all. Nothing is registered for
+that and no admin rights are needed. This is what makes the portable build, and
+the single-file EXE above, independent of the machine they land on.
+
+**System requirements:** Windows 10 version 2004 (build 19041) or later, the same
+floor as the upstream portable distribution. Windows Server 2019 is build 17763
+and is below it, so the terminal cannot run there and the installer says so
+rather than placing a copy that cannot open. Windows Server 2022 (build 20348)
+and later are supported.
 
 ## Patching an installed copy, and why it is not possible
 
@@ -218,6 +241,8 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 از بخش [Releases](../../releases) نسخهٔ مناسب سیستمتون رو بگیرید:
 
 - `WindowsTerminal-RTL-Installer.exe` فایل نصب، یک فایل که بیلد مناسب سیستم شما را دانلود و نصب می‌کند
+- `WindowsTerminal-RTL-Portable-x64.exe` کل بیلد x64 در یک فایل، بدون نصب و بدون باز کردن zip؛ هرجا اجرا کنید
+- `WindowsTerminal-RTL-Portable-arm64.exe` همین برای ویندوز روی ARM
 - `WindowsTerminal-RTL-x64.zip` برای پردازنده‌های ۶۴ بیتی اینتل/AMD
 - `WindowsTerminal-RTL-arm64.zip` برای ویندوز روی ARM
 - `windowsterminal-rtl.patch` خود پچ RTL، برای بیلد گرفتن خودتان از Windows Terminal
@@ -233,7 +258,12 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 - **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. با `--uninstall` هم حذف می‌شود.
 - **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
+- **یک فایل، حتی بدون zip:** `WindowsTerminal-RTL-Portable-x64.exe` (یا نسخهٔ `arm64`) را از هرجا که گذاشته‌اید اجرا کنید. کل بیلد داخل همان یک فایل است. اولین اجرا آن را در `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` باز می‌کند و ترمینال را بالا می‌آورد، و اجراهای بعدی فوری هستند، چون محتوا از قبل روی دیسک است و نشانگر هنوز با آن مطابقت دارد. چیزی ثبت نمی‌شود و دسترسی مدیر خواسته نمی‌شود. یک ریلیز جدید پوشهٔ نسخهٔ قبلی را جایگزین می‌کند، پس دو نسخه هرگز با هم قاطی نمی‌شوند.
 - **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
+
+بیلد فونت‌های خودش را همراه دارد. `CascadiaCode.ttf` و `CascadiaMono.ttf` کنار `WindowsTerminal.exe` قرار دارند و ترمینال هر `.ttf` که کنار فایل اجرایی خودش باشد را *قبل از* درخواست فونت از سیستم بارگذاری می‌کند، بنابراین روی سیستمی که اصلاً فونتی نصب نیست هم متن خود را نشان می‌دهد. هیچ فونتی ثبت نمی‌شود و دسترسی مدیر هم لازم نیست. همین چیزی است که بیلد پورتابل و فایل تک‌فایلهٔ بالا را مستقل از سیستمی می‌کند که رویش اجرا می‌شوند.
+
+**پیش‌نیاز سیستم:** ویندوز ۱۰ نسخهٔ ۲۰۰۴ (بیلد ۱۹۰۴۱) یا جدیدتر، همان حدی که توزیع پورتابل بالادست لازم دارد. Windows Server 2019 بیلد ۱۷۷۶۳ است و پایین‌تر از این حد است، پس ترمینال روی آن اجرا نمی‌شود و نصب‌کننده همین را به شما می‌گوید، به جای اینکه نسخه‌ای را نصب کند که باز نمی‌شود. Windows Server 2022 (بیلد ۲۰۳۴۸) و جدیدتر پشتیبانی می‌شوند.
 
 ### اصلاح نسخهٔ نصب‌شده و چرا ممکن نیست
 
