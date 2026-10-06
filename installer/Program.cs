@@ -13,6 +13,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -20,6 +21,16 @@ namespace WindowsTerminalRtlInstaller
 {
     internal static class Program
     {
+        // Windows Terminal's own portable distribution will not start below this
+        // build, and neither will the copy this installer places. Windows Server
+        // 2019 is build 17763, far under it, so installing there would hand the
+        // user a shortcut to an application that cannot open. Saying so up front
+        // beats a silent exit, and it beats an install that looks fine and then
+        // does nothing.
+        private const int MinimumWindowsBuild = 19041;
+
+        private const uint MessageBoxTypeError = 0x00000010;
+
         private static int Main(string[] args)
         {
             // A /target:winexe process has no console of its own. Inherited from
@@ -28,17 +39,138 @@ namespace WindowsTerminalRtlInstaller
             try { Console.OutputEncoding = Encoding.UTF8; }
             catch { }
 
-            // A graphical front end needs a single-threaded apartment for the
-            // folder dialog and the WScript.Shell COM calls it makes.
+            // This runs before anything graphical is touched and it needs only the
+            // base class library to say it, so the message still reaches the user
+            // on an edition that ships without the desktop parts of the framework.
+            int build = GetWindowsBuild();
+            if (build > 0 && build < MinimumWindowsBuild)
+            {
+                ReportUnsupportedOs(build, args.Length > 0);
+                return 1;
+            }
+
             if (args.Length == 0)
             {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                // The wizard is started from its own method rather than from here on
+                // purpose. Constructing WizardForm directly in Main would record a
+                // use of System.Windows.Forms inside Main itself, and the runtime has
+                // to load that assembly to compile Main, which is the first thing to
+                // run. On a machine without the desktop framework that fails before
+                // any line of this method executes, and the process dies with no
+                // window and no message at all, which is what users on Server Core
+                // see. Keeping the reference one method away means the assembly is
+                // loaded only when the wizard is genuinely asked for.
+                try
+                {
+                    return RunWizard();
+                }
+                catch (Exception ex)
+                {
+                    // A machine can be new enough for the terminal and still ship
+                    // without the desktop framework; Server Core is exactly that
+                    // combination. Recording the detail and dropping to the console
+                    // path keeps the installer useful instead of vanishing.
+                    string log = null;
+                    try
+                    {
+                        log = Path.Combine(Path.GetTempPath(),
+                            "WindowsTerminal-RTL-installer-error.log");
+                        File.WriteAllText(log, ex.ToString());
+                    }
+                    catch { }
 
-                // An unhandled error on the UI thread would otherwise vanish and
-                // the user would only see a frozen window. Write the detail to a
-                // log file they can attach to a report, and tell them so.
-                Application.ThreadException += (s, e) =>
+                    Console.Error.WriteLine();
+                    Console.Error.WriteLine("  the graphical wizard could not start (" + ex.Message + ")");
+                    if (log != null) Console.Error.WriteLine("  details written to " + log);
+                    Console.Error.WriteLine("  continuing with the console installer");
+                    Console.Error.WriteLine();
+                }
+            }
+
+            return ConsoleMain(args);
+        }
+
+        // ------------------------------------------------------- OS detection
+
+        // RtlGetVersion reports the true build number and is unaffected by the
+        // compatibility view that Environment.OSVersion falls into when the
+        // application manifest declares no supportedOS entry, which is the case
+        // for this one.
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct OsVersionInfoEx
+        {
+            public int dwOSVersionInfoSize;
+            public int dwMajorVersion;
+            public int dwMinorVersion;
+            public int dwBuildNumber;
+            public int dwPlatformId;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string szCSDVersion;
+            public ushort wServicePackMajor;
+            public ushort wServicePackMinor;
+            public ushort wSuiteMask;
+            public byte wProductType;
+            public byte wReserved;
+        }
+
+        [DllImport("ntdll.dll", SetLastError = true)]
+        private static extern int RtlGetVersion(ref OsVersionInfoEx versionInfo);
+
+        private static int GetWindowsBuild()
+        {
+            OsVersionInfoEx info = new OsVersionInfoEx();
+            info.dwOSVersionInfoSize = Marshal.SizeOf(info);
+            if (RtlGetVersion(ref info) != 0) return 0;
+            return info.dwBuildNumber;
+        }
+
+        private static void ReportUnsupportedOs(int build, bool fromConsole)
+        {
+            string[] lines = new string[] {
+                "Windows Terminal requires Windows 10 version 2004 (build 19041) or later.",
+                "This machine reports build " + build + ", so the terminal cannot run here.",
+                "The installer will not place a copy of it that cannot open.",
+                string.Empty,
+                "Windows Server 2019 is build 17763, which is below the requirement.",
+                "Windows Server 2022 (build 20348) and later are supported."
+            };
+
+            if (fromConsole)
+            {
+                Console.Error.WriteLine();
+                foreach (string line in lines) { Console.Error.WriteLine("  " + line); }
+                Console.Error.WriteLine();
+                return;
+            }
+
+            // user32 rather than System.Windows.Forms, so the box appears even on an
+            // edition that ships without the desktop framework.
+            StringBuilder body = new StringBuilder();
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (i > 0) body.AppendLine();
+                body.Append(lines[i]);
+            }
+            NativeMessageBox(IntPtr.Zero, body.ToString(),
+                InstallJob.AppName + " installer", MessageBoxTypeError);
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "MessageBox")]
+        private static extern int NativeMessageBox(IntPtr hWnd, string text, string caption, uint type);
+
+        // ------------------------------------------------------- graphical UI
+
+        private static int RunWizard()
+        {
+            // A graphical front end needs a single-threaded apartment for the
+            // folder dialog and the WScript.Shell COM calls it makes.
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
+            // An unhandled error on the UI thread would otherwise vanish and
+            // the user would only see a frozen window. Write the detail to a
+            // log file they can attach to a report, and tell them so.
+            Application.ThreadException += (s, e) =>
                 {
                     string log = null;
                     try
@@ -53,11 +185,8 @@ namespace WindowsTerminalRtlInstaller
                         Strings.Get(Strings.CrashTitle),
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                 };
-                Application.Run(new WizardForm());
-                return 0;
-            }
-
-            return ConsoleMain(args);
+            Application.Run(new WizardForm());
+            return 0;
         }
 
         // ------------------------------------------------------- console UI
