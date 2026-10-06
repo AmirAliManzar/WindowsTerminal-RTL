@@ -57,8 +57,19 @@ struct Source final : IDWriteTextAnalysisSource
         *len = pos;
         return S_OK;
     }
+    // What the RTL patch does when a row contains RTL text: the paragraph
+    // direction becomes RTL (not "first strong character"). Mimicked here so
+    // the probe shows what the fix would produce.
     DWRITE_READING_DIRECTION __stdcall GetParagraphReadingDirection() noexcept override
     {
+        for (UINT32 i = 0; i < length; ++i)
+        {
+            const WCHAR c = text[i];
+            if ((c >= 0x0590 && c <= 0x08ff) || (c >= 0xfb1d && c <= 0xfdff) || (c >= 0xfe70 && c <= 0xfeff))
+            {
+                return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
+            }
+        }
         return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
     }
     HRESULT __stdcall GetLocaleName(UINT32, UINT32* len, const WCHAR** name) noexcept override

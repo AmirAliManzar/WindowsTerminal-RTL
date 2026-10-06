@@ -19,3 +19,7 @@ vcpkg/
 
 # The installer's csc.exe output; built by scripts/build-installer.ps1
 installer/out/
+
+# The bidi probes are compiled with cl.exe next to their sources
+tools/**/*.exe
+tools/**/*.obj

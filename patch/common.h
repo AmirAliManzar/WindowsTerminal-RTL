@@ -324,36 +324,9 @@ namespace Microsoft::Console::Render::Atlas
         uint8_t level = 0;
     };
 
-    // Returns the first strong directional character of a string, or 0 if there
-    // is none. Used to implement UBA rules P2/P3 for GetParagraphReadingDirection.
-    constexpr char32_t firstStrongDirectional(const wchar_t* text, const size_t length) noexcept
-    {
-        for (size_t i = 0; i < length; ++i)
-        {
-            const auto ch = text[i];
-            // LTR strong (L), plus the explicit LTR controls.
-            if ((ch >= 0x0041 && ch <= 0x005A) || (ch >= 0x0061 && ch <= 0x007A) ||
-                (ch >= 0x00C0 && ch <= 0x02B8 && ch != 0x00D7 && ch != 0x00F7) ||
-                (ch >= 0x0370 && ch <= 0x058F) || // Greek..Armenian, stops before Hebrew
-                (ch >= 0x0900 && ch <= 0x1FFF) || (ch >= 0x2C00 && ch <= 0xD7FF) ||
-                (ch >= 0xFB00 && ch <= 0xFB17) || (ch >= 0xFF21 && ch <= 0xFFDF) ||
-                ch == 0x200E || ch == 0x202A || ch == 0x202D || ch == 0x2066)
-            {
-                return ch;
-            }
-            // RTL strong (R / AL), plus the explicit RTL controls.
-            if ((ch >= 0x0590 && ch <= 0x05FF) || // Hebrew
-                (ch >= 0x0600 && ch <= 0x07BF) || // Arabic, Syriac, Thaana, N'Ko
-                (ch >= 0x08A0 && ch <= 0x08FF) || // Arabic Extended-A
-                (ch >= 0xFB1D && ch <= 0xFDFF) || (ch >= 0xFE70 && ch <= 0xFEFF) ||
-                ch == 0x200F || ch == 0x202B || ch == 0x202E || ch == 0x2067 || ch == 0x2069)
-            {
-                return ch;
-            }
-        }
-        return 0;
-    }
-
+    // True for a strong right-to-left character: Hebrew, Arabic and the
+    // alphabets around them, plus the explicit RTL controls. Used to decide a
+    // row's paragraph direction, see TextAnalysisSource::GetParagraphReadingDirection.
     inline constexpr bool isStrongRTL(const char32_t ch) noexcept
     {
         return (ch >= 0x0590 && ch <= 0x05FF) || // Hebrew

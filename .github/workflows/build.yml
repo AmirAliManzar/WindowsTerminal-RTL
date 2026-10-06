@@ -68,7 +68,7 @@ jobs:
         run: |
           mkdir artifacts
           cd tools\bidi-probe
-          for %%P in (probe-rtl-layout probe-glyph-order probe-lamalef probe-font-fit probe-glyph-direction) do (
+          for %%P in (probe-rtl-layout probe-para-dir probe-glyph-order probe-lamalef probe-font-fit probe-glyph-direction) do (
             cl /nologo /EHsc /std:c++20 %%P.cpp /Fe:%%P.exe /link dwrite.lib || exit /b 1
             echo ### %%P >> ..\..\artifacts\probes-%%P.txt
             %%P.exe >> ..\..\artifacts\probes-%%P.txt 2>&1

@@ -10,8 +10,8 @@ This patch fixes the problem at the text-shaping layer, in the Atlas renderer, s
 
 Prebuilt files are on the [Releases](../../releases) page:
 
-- `WindowsTerminal-RTL-Installer.exe` the installer — one file, downloads and
-  installs the right build for you
+- `WindowsTerminal-RTL-Installer.exe` the installer, one file that downloads
+  and installs the right build for you
 - `WindowsTerminal-RTL-x64.zip` portable build for 64-bit Intel/AMD
 - `WindowsTerminal-RTL-arm64.zip` portable build for Windows on ARM
 - `windowsterminal-rtl.patch` the RTL patch, for building Windows Terminal yourself
@@ -27,9 +27,13 @@ configuration, so your profiles, themes, colour schemes and fonts carry over:
 Download the build for your architecture and unzip it anywhere.
 
 - **Installer:** grab `WindowsTerminal-RTL-Installer.exe` from the Releases page
-  and double-click it. It detects your architecture, downloads the matching
-  build, verifies it against its sha256, and installs it. No admin rights, and
-  the Store terminal is untouched. Re-run it with `--uninstall` to remove it.
+  and double-click it. It opens a short wizard: pick the architecture, pick the
+  install folder, choose whether to add Start menu and desktop shortcuts, and it
+  downloads the matching build, verifies it against its sha256 and installs it.
+  The wizard is English by default and switches to Persian when your Windows
+  display language is Persian; the language button in the header corner switches
+  between the two at any point. No admin rights, and the Store terminal is
+  untouched. Run it again with `--uninstall` to remove it.
 - **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
   and nothing outside that folder is touched.
 - **With a Start menu entry:** the zip also carries `install.ps1`. Right-click
@@ -39,7 +43,7 @@ Download the build for your architecture and unzip it anywhere.
   `install.ps1 -Uninstall` to remove it. Your settings are never touched either
   way, because a portable build reads the unpackaged settings path above.
 
-## Patching an installed copy — and why it is not possible
+## Patching an installed copy, and why it is not possible
 
 An honest note, because the alternative is shipping a tool that fails in a way
 that looks like the user's fault: **replacing files inside a Store-installed
@@ -48,16 +52,16 @@ terminal is not possible on modern Windows.**
 Store packages live in `C:\Program Files\WindowsApps`, which is protected by
 the Windows Container Isolation File System (`wcifs`) filter driver. We
 verified this directly on a fresh install. Taking ownership of the entire
-package recursively (`takeown /R /A /D Y`) succeeds — 265 files now owned by
+package recursively (`takeown /R /A /D Y`) succeeds: 265 files now owned by
 Administrators. Granting Administrators full control recursively
-(`icacls /grant *S-1-5-32-544:F /T`) also succeeds — 265 files processed, zero
+(`icacls /grant *S-1-5-32-544:F /T`) also succeeds: 265 files processed, zero
 failures. Then creating a single new file in that same folder is still denied.
 `wcifs` ignores ownership and ACLs entirely; it blocks writes from any process
 that is not running inside the package's own container. The `takeown` recipe
 that works on Windows 8 and early Windows 10 does not work on anything that
 ships `wcifs`.
 
-The only writer `wcifs` trusts is the AppX deployment API — the same path the
+The only writer `wcifs` trusts is the AppX deployment API, the same path the
 Store itself uses. Going through it requires a package signed by Microsoft to
 replace the Store install in place, which is not something this project can do.
 
@@ -83,8 +87,9 @@ Five files, all in the Atlas renderer:
   column map.
 - `src/renderer/atlas/DWriteTextAnalysis.cpp` and `.h`
   `AnalyzeBidi` is actually called - `AnalyzeScript` on its own never runs the
-  bidi algorithm, so without it every cluster would come back level 0 - and the
-  sink now collects the resolved levels.
+  bidi algorithm, so without it every cluster would come back level 0 - the sink
+  now collects the resolved levels, and a row's paragraph direction is
+  right-to-left whenever it contains any strong RTL letter.
 
 The complete patch is at:
 
@@ -107,25 +112,34 @@ text or numbers render bit-for-bit as before.
 
 ### Only part of the bidi algorithm
 
-Rule L2 is implemented, which is what reorders whole words. The rules that decide
-paragraph direction (L1), mirror brackets and numbers (L3/L4), and place neutral
-characters such as spaces (N1/N2) are not. Pure Persian or Arabic text is
-correct; mixed content such as `ABC سلام 123` may put the Latin run or the digits
-in the wrong place.
+Rule L2 is implemented, which is what reorders whole words, and paragraph
+direction is decided here: a row is right-to-left whenever it contains any strong
+RTL letter. That deliberately replaces the Unicode rules P2/P3, which judge a
+paragraph by its *first* strong character. A terminal line almost always starts
+with a Latin prompt, so under P2/P3 a prompt followed by Persian would be a
+left-to-right paragraph, and L2 would then run the Persian the wrong way and show
+the last typed word nearest the prompt. Taking the base direction from any RTL
+letter puts the prompt on the right and the words in the order they were typed.
+Where neutral characters such as spaces settle is resolved by DirectWrite from
+that paragraph direction. The `probe-para-dir` probe in `tools/bidi-probe`
+compares the two rules on exactly that case.
+
+Not implemented here: bracket mirroring and number shaping (L3/L4), so mixed
+content such as `ABC سلام 123` may put the digits in the wrong place.
 
 This is a deliberate stopping point rather than an oversight: each rule has to be
-correct on its own before it is layered on, and getting L2 right is the part that
-makes a Persian line readable at all.
+correct on its own before it is layered on.
 
 ### How it was verified
 
-`tools/bidi-probe` holds five small programs that answer questions about the
+`tools/bidi-probe` holds six small programs that answer questions about the
 rendering that cannot be answered by looking at a screen. They run in CI and
 their output is attached to the workflow run as build artifacts:
 
 | probe | question |
 |---|---|
 | `probe-rtl-layout` | Runs the renderer's own pipeline and checks that reading the emitted cells in the corresponding direction reproduces the input. This is what distinguishes "the words moved" from "the words are wrong". |
+| `probe-para-dir` | How a row's paragraph direction should be decided. Compares Unicode P2/P3, which looks at the first strong character, against treating any strong RTL letter as decisive, on a prompt followed by Persian. Only the second reads back correctly. |
 | `probe-glyph-order` | Whether DirectWrite returns the glyphs of an RTL run in logical or visual order. This decides whether rule L2 has to reverse the clusters. |
 | `probe-glyph-direction` | Whether DirectWrite reverses them anyway when asked for left to right. |
 | `probe-lamalef` | Which installed fonts fuse lam-alef, the mandatory ligature in Arabic script. On this machine: none of them, 0 of 22. |
@@ -203,7 +217,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 از بخش [Releases](../../releases) نسخهٔ مناسب سیستمتون رو بگیرید:
 
-- `WindowsTerminal-RTL-Installer.exe` فایل نصب — یک فایل، بیلد مناسب سیستم شما را دانلود و نصب می‌کند
+- `WindowsTerminal-RTL-Installer.exe` فایل نصب، یک فایل که بیلد مناسب سیستم شما را دانلود و نصب می‌کند
 - `WindowsTerminal-RTL-x64.zip` برای پردازنده‌های ۶۴ بیتی اینتل/AMD
 - `WindowsTerminal-RTL-arm64.zip` برای ویندوز روی ARM
 - `windowsterminal-rtl.patch` خود پچ RTL، برای بیلد گرفتن خودتان از Windows Terminal
@@ -217,17 +231,17 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 فایل zip را هرجا باز کنید.
 
-- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. معماری سیستم را تشخیص می‌دهد، بیلد مناسب را دانلود می‌کند، با sha256 تأییدش می‌کند و نصب می‌کند. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. با `--uninstall` هم حذف می‌شود.
+- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. با `--uninstall` هم حذف می‌شود.
 - **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
 - **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
 
-### اصلاح نسخهٔ نصب‌شده — و چرا ممکن نیست
+### اصلاح نسخهٔ نصب‌شده و چرا ممکن نیست
 
 یادداشت صادقانه، چون در غیر این صورت پروژه ابزاری منتشر می‌کند که شکستش شبیه تقصیر خود کاربر است: **جایگزینی فایل‌ها داخل یک ترمینال نصب‌شده از Store در ویندوزهای جدید ممکن نیست.**
 
-بسته‌های Store داخل `C:\Program Files\WindowsApps` هستند که توسط درایور فیلتر «سیستم فایل ایزولهٔ ویندوز» (`wcifs`) محافظت می‌شود. ما این را روی یک نصب تازه خودمان تست کردیم: گرفتن مالکیت کل پکیج به‌صورت بازگشتی (`takeown /R /A /D Y`) موفق می‌شود — ۲۶۵ فایل به مالکیت مدیران درمی‌آید. دادن دسترسی کامل به مدیران به‌صورت بازگشتی (`icacls /grant *S-1-5-32-544:F /T`) هم موفق می‌شود — ۲۶۵ فایل پردازش، صفر شکست. با این حال ساختن یک فایل جدید در همان پوشه همچنان رد می‌شود. `wcifs` اصلاً به مالکیت و ACL نگاه نمی‌کند؛ نوشتن از هر پروسه‌ای که داخل کانتینر خود پکیج اجرا نمی‌شود را مسدود می‌کند. همان دستور `takeown` که در ویندوز ۸ و ویندوز ۱۰ٔ اولیه کار می‌کرد، در سیستمی که `wcifs` دارد دیگر کار نمی‌کند.
+بسته‌های Store داخل `C:\Program Files\WindowsApps` هستند که توسط درایور فیلتر «سیستم فایل ایزولهٔ ویندوز» (`wcifs`) محافظت می‌شود. ما این را روی یک نصب تازه خودمان تست کردیم: گرفتن مالکیت کل پکیج به‌صورت بازگشتی (`takeown /R /A /D Y`) موفق می‌شود، ۲۶۵ فایل به مالکیت مدیران درمی‌آید. دادن دسترسی کامل به مدیران به‌صورت بازگشتی (`icacls /grant *S-1-5-32-544:F /T`) هم موفق می‌شود، ۲۶۵ فایل پردازش، صفر شکست. با این حال ساختن یک فایل جدید در همان پوشه همچنان رد می‌شود. `wcifs` اصلاً به مالکیت و ACL نگاه نمی‌کند؛ نوشتن از هر پروسه‌ای که داخل کانتینر خود پکیج اجرا نمی‌شود را مسدود می‌کند. همان دستور `takeown` که در ویندوز ۸ و ویندوز ۱۰ٔ اولیه کار می‌کرد، در سیستمی که `wcifs` دارد دیگر کار نمی‌کند.
 
-تنها نوشتنی که `wcifs` به آن اعتماد می‌کند API استقرار AppX است — همان مسیری که خود Store از آن استفاده می‌کند. استفاده از آن برای جایگزینی نصب Store در جای خودش نیازمند پکیجی امضاشده توسط مایکروسافت است که این پروژه نمی‌تواند تولید کند.
+تنها نوشتنی که `wcifs` به آن اعتماد می‌کند API استقرار AppX است، همان مسیری که خود Store از آن استفاده می‌کند. استفاده از آن برای جایگزینی نصب Store در جای خودش نیازمند پکیجی امضاشده توسط مایکروسافت است که این پروژه نمی‌تواند تولید کند.
 
 **بیلد پورتابل بالا جایگزین کارآمد است.** از هر پوشه‌ای اجرا می‌شود، تنظیمات و فونت‌های فعلی شما را می‌خواند، نیازی به نصب ندارد و خارج از آن پوشه هیچ‌چیز را لمس نمی‌کند.
 
@@ -243,15 +257,17 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 - `src/renderer/atlas/DWriteTextAnalysis.h`
 - `src/renderer/atlas/common.h`
 
-قاعدهٔ L2 یونیکد پیاده شده که ترتیب کلمات را درست می‌کند. سطرهایی که هیچ متن راست‌به‌چپ ندارند دست‌نخورده می‌مانند، پس متن انگلیسی و عدد دقیقاً مثل قبل رسم می‌شود.
+قاعدهٔ L2 یونیکد پیاده شده که ترتیب کلمات را درست می‌کند، و جهت پاراگراف هم همین‌جا تعیین می‌شود: هر سطری که حداقل یک حرف راست‌به‌چپ قوی داشته باشد راست‌به‌چپ است. این جایگزین قاعده‌های P2/P3 یونیکد شده که پاراگراف را بر اساس *اولین* حرف قوی تصمیم می‌گیرند. چون سطر ترمینال تقریباً همیشه با یک پرامپت انگلیسی شروع می‌شود، P2/P3 یک پرامپت به‌همراه متن فارسی را یک پاراگراف چپ‌به‌راست می‌دانست و بعد L2 کلمات فارسی را برعکس می‌کرد، یعنی آخرین کلمه‌ای که تایپ کرده‌اید کنار پرامپت نشان داده می‌شد. با گرفتن جهت از هر حرف راست‌به‌چپی، پرامپت سمت راست می‌افتد و کلمات به همان ترتیبی که تایپ کرده‌اید دیده می‌شوند. محل قرار گرفتن نویسه‌های خنثی مثل فاصله را خود DirectWrite بر اساس همان جهت پاراگراف مشخص می‌کند. پروب `probe-para-dir` در `tools/bidi-probe` همین دو قاعده را روی این مورد مقایسه می‌کند.
 
-قاعده‌های دیگر یونیکد (تعیین جهت پاراگراف L1، آینه‌کردن پرانتز و اعداد L3/L4، و جای‌گذاری فاصله‌ها N1/N2) هنوز پیاده نشده‌اند. متن کاملاً فارسی درست است؛ محتوای ترکیبی مثل `ABC سلام 123` ممکن است جای بخش لاتین یا عددها جابه‌جا شود.
+سطرهایی که هیچ متن راست‌به‌چپ ندارند دست‌نخورده می‌مانند، پس متن انگلیسی و عدد دقیقاً مثل قبل رسم می‌شود.
+
+آینه‌کردن پرانتز و شکل‌دهی اعداد (L3/L4) هنوز پیاده نشده‌اند، پس محتوای ترکیبی مثل `ABC سلام 123` ممکن است جای عددها جابه‌جا نشان داده شود.
 
 پچ کامل در `patch/windowsterminal-rtl.patch` و نسخهٔ خوانای فایل‌های تغییرکرده در `patch/` است.
 
 ### آزمون‌ها
 
-پنج برنامهٔ کوچک در `tools/bidi-probe` هست که به سؤال‌هایی جواب می‌دهند که با نگاه کردن به صفحه نمی‌شود پرسید — از جمله اینکه آیا خواندنِ سلول‌های رسم‌شده متن اصلی را برمی‌گرداند یا نه، و کدام فونت با شبکهٔ سلولی ترمینال جور درمی‌آید. خروجی‌شان در هر بیلد اجرا می‌شود و به‌عنوان artifact به همان اجرای CI پیوست می‌شود، ولی دیگر داخل صفحهٔ ریلیز قرار نمی‌گیرد.
+شش برنامهٔ کوچک در `tools/bidi-probe` هست که به سؤال‌هایی جواب می‌دهند که با نگاه کردن به صفحه نمی‌شود پرسید، از جمله اینکه آیا خواندنِ سلول‌های رسم‌شده متن اصلی را برمی‌گرداند یا نه، جهت پاراگراف یک سطر باید چطور تعیین شود، و کدام فونت با شبکهٔ سلولی ترمینال جور درمی‌آید. خروجی‌شان در هر بیلد اجرا می‌شود و به‌عنوان artifact به همان اجرای CI پیوست می‌شود، ولی دیگر داخل صفحهٔ ریلیز قرار نمی‌گیرد.
 
 دو نکته که با اندازه‌گیری ثابت شده و ممکن است انتظارش را نداشته باشید:
 
