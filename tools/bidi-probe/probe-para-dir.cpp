@@ -186,11 +186,27 @@ int main()
         for (UINT32 idx : order) printCp((char32_t)(UINT16)text[idx]);
         printf("\n");
 
-        // A Persian reader reads the RTL part right to left. Rebuild the text
-        // that way and see whether it is what was typed.
+        // Read the line back the way a person would: each run in its own
+        // direction, left-to-right runs left to right and right-to-left runs
+        // right to left. Reading a whole mixed line in a single direction
+        // scrambles whichever part runs the other way.
         std::wstring back;
-        for (size_t i = order.size(); i-- > 0;) back.push_back((WCHAR)text[order[i]]);
-        printf("  read right to left   : ");
+        for (size_t i = 0; i < order.size();)
+        {
+            const UINT8 lvl = charLevel[order[i]];
+            size_t j = i;
+            while (j < order.size() && charLevel[order[j]] == lvl) ++j;
+            if (lvl & 1)
+            {
+                for (size_t k = j; k-- > i;) back.push_back((WCHAR)text[order[k]]);
+            }
+            else
+            {
+                for (size_t k = i; k < j; ++k) back.push_back((WCHAR)text[order[k]]);
+            }
+            i = j;
+        }
+        printf("  read as a person would: ");
         for (WCHAR w : back) printCp((char32_t)(UINT16)w);
         printf("\n");
         printf("  %s\n\n", (back == text) ? "OK: reproduces the input" : "MISMATCH: word order is wrong");

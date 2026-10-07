@@ -62,7 +62,7 @@ index 727f01012..ce1b9fe43 100644
      _api.clusterMap = Buffer<u16>{ projectedTextSize };
      _api.textProps = Buffer<DWRITE_SHAPING_TEXT_PROPERTIES>{ projectedTextSize };
      _api.glyphIndices = Buffer<u16>{ projectedGlyphSize };
-@@ -875,6 +914,282 @@ void AtlasEngine::_flushBufferLine()
+@@ -875,6 +914,279 @@ void AtlasEngine::_flushBufferLine()
          segmentBeg = segmentEnd;
          custom = !custom;
      }
@@ -308,10 +308,7 @@ index 727f01012..ce1b9fe43 100644
 +
 +            if (permuted)
 +            {
-+                // v1.24.11911.0 has two colour planes (background, foreground).
-+                // The underlineBitmap plane was added to main later; iterate
-+                // whatever this ref defines rather than naming a third plane.
-+                u32* const planes[] = { _p.backgroundBitmap.data(), _p.foregroundBitmap.data() };
++                u32* const planes[3] = { _p.backgroundBitmap.data(), _p.foregroundBitmap.data(), _p.underlineBitmap.data() };
 +                auto scratch = std::vector<u32>(cells);
 +                for (u32* const plane : planes)
 +                {
@@ -500,29 +497,17 @@ diff --git a/src/renderer/atlas/DWriteTextAnalysis.cpp b/src/renderer/atlas/DWri
 index 4cc295d36..278dd4956 100644
 --- a/src/renderer/atlas/DWriteTextAnalysis.cpp
 +++ b/src/renderer/atlas/DWriteTextAnalysis.cpp
-@@ -85,6 +85,26 @@ HRESULT TextAnalysisSource::GetTextBeforePosition(UINT32 textPosition, const WCH
+@@ -85,6 +85,14 @@ HRESULT TextAnalysisSource::GetTextBeforePosition(UINT32 textPosition, const WCH
  
  DWRITE_READING_DIRECTION TextAnalysisSource::GetParagraphReadingDirection() noexcept
  {
-+    // A row is a right-to-left paragraph whenever it contains any strong RTL
-+    // letter, instead of only when its *first* strong character is RTL.
-+    //
-+    // Rule P2/P3 of the Unicode bidi algorithm would judge "PS> <Persian>" by
-+    // its Latin prompt and call the paragraph LTR. Rule L2 then keeps the RTL
-+    // run running leftward, which shows the last typed word nearest the prompt
-+    // instead of the first. In a terminal every line is a prompt followed by
-+    // whatever the user typed, so P2/P3 gets the base direction wrong for
-+    // effectively every Persian, Arabic and Hebrew line.
-+    //
-+    // Treating any strong RTL letter as decisive puts the paragraph base on the
-+    // right, so the prompt lands on the right and the words read in the order
-+    // they were typed. RtlTerminal does the same thing.
-+    for (UINT32 i = 0; i < _textLength; ++i)
++    // UBA rules P2/P3: the paragraph level is determined by the first strong
++    // directional character. Hardcoding LTR here is what prevented Arabic
++    // contextual shaping entirely.
++    const auto ch = firstStrongDirectional(_text, _textLength);
++    if (ch != 0 && isStrongRTL(ch))
 +    {
-+        if (isStrongRTL(_text[i]))
-+        {
-+            return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
-+        }
++        return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
 +    }
      return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
  }
@@ -577,7 +562,7 @@ diff --git a/src/renderer/atlas/common.h b/src/renderer/atlas/common.h
 index fc25d04ce..b483d45b0 100644
 --- a/src/renderer/atlas/common.h
 +++ b/src/renderer/atlas/common.h
-@@ -315,6 +315,27 @@ namespace Microsoft::Console::Render::Atlas
+@@ -315,6 +315,54 @@ namespace Microsoft::Console::Render::Atlas
          DWRITE_SCRIPT_ANALYSIS analysis;
      };
  
@@ -590,9 +575,36 @@ index fc25d04ce..b483d45b0 100644
 +        uint8_t level = 0;
 +    };
 +
-+    // True for a strong right-to-left character: Hebrew, Arabic and the
-+    // alphabets around them, plus the explicit RTL controls. Used to decide a
-+    // row's paragraph direction, see TextAnalysisSource::GetParagraphReadingDirection.
++    // Returns the first strong directional character of a string, or 0 if there
++    // is none. Used to implement UBA rules P2/P3 for GetParagraphReadingDirection.
++    constexpr char32_t firstStrongDirectional(const wchar_t* text, const size_t length) noexcept
++    {
++        for (size_t i = 0; i < length; ++i)
++        {
++            const auto ch = text[i];
++            // LTR strong (L), plus the explicit LTR controls.
++            if ((ch >= 0x0041 && ch <= 0x005A) || (ch >= 0x0061 && ch <= 0x007A) ||
++                (ch >= 0x00C0 && ch <= 0x02B8 && ch != 0x00D7 && ch != 0x00F7) ||
++                (ch >= 0x0370 && ch <= 0x058F) || // Greek..Armenian, stops before Hebrew
++                (ch >= 0x0900 && ch <= 0x1FFF) || (ch >= 0x2C00 && ch <= 0xD7FF) ||
++                (ch >= 0xFB00 && ch <= 0xFB17) || (ch >= 0xFF21 && ch <= 0xFFDF) ||
++                ch == 0x200E || ch == 0x202A || ch == 0x202D || ch == 0x2066)
++            {
++                return ch;
++            }
++            // RTL strong (R / AL), plus the explicit RTL controls.
++            if ((ch >= 0x0590 && ch <= 0x05FF) || // Hebrew
++                (ch >= 0x0600 && ch <= 0x07BF) || // Arabic, Syriac, Thaana, N'Ko
++                (ch >= 0x08A0 && ch <= 0x08FF) || // Arabic Extended-A
++                (ch >= 0xFB1D && ch <= 0xFDFF) || (ch >= 0xFE70 && ch <= 0xFEFF) ||
++                ch == 0x200F || ch == 0x202B || ch == 0x202E || ch == 0x2067 || ch == 0x2069)
++            {
++                return ch;
++            }
++        }
++        return 0;
++    }
++
 +    inline constexpr bool isStrongRTL(const char32_t ch) noexcept
 +    {
 +        return (ch >= 0x0590 && ch <= 0x05FF) || // Hebrew

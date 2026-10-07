@@ -111,8 +111,9 @@ Five files, all in the Atlas renderer:
 - `src/renderer/atlas/DWriteTextAnalysis.cpp` and `.h`
   `AnalyzeBidi` is actually called - `AnalyzeScript` on its own never runs the
   bidi algorithm, so without it every cluster would come back level 0 - the sink
-  now collects the resolved levels, and a row's paragraph direction is
-  right-to-left whenever it contains any strong RTL letter.
+  now collects the resolved levels, and a row's paragraph direction follows the
+  Unicode rules P2/P3: it is right-to-left when the row's *first* strong
+  character is right-to-left.
 
 The complete patch is at:
 
@@ -136,16 +137,17 @@ text or numbers render bit-for-bit as before.
 ### Only part of the bidi algorithm
 
 Rule L2 is implemented, which is what reorders whole words, and paragraph
-direction is decided here: a row is right-to-left whenever it contains any strong
-RTL letter. That deliberately replaces the Unicode rules P2/P3, which judge a
-paragraph by its *first* strong character. A terminal line almost always starts
-with a Latin prompt, so under P2/P3 a prompt followed by Persian would be a
-left-to-right paragraph, and L2 would then run the Persian the wrong way and show
-the last typed word nearest the prompt. Taking the base direction from any RTL
-letter puts the prompt on the right and the words in the order they were typed.
-Where neutral characters such as spaces settle is resolved by DirectWrite from
-that paragraph direction. The `probe-para-dir` probe in `tools/bidi-probe`
-compares the two rules on exactly that case.
+direction is decided here by the Unicode rules P2/P3: a row is right-to-left when
+its *first* strong character is right-to-left, and left-to-right otherwise. A
+line that starts with a Latin prompt is therefore a left-to-right paragraph, the
+prompt keeps its place on the left, and any Persian, Arabic or Hebrew after it is
+a right-to-left run nested inside it, laid out the way a browser or a text editor
+lays out mixed content. A line that starts with Persian is a right-to-left
+paragraph and runs from the right. Where neutral characters such as spaces settle
+is resolved by DirectWrite from that paragraph direction. The `probe-para-dir`
+probe in `tools/bidi-probe` prints the resolved levels and the final visual order
+under both this rule and the older rule where any RTL letter makes the whole row
+RTL, so the difference is visible rather than argued about.
 
 Not implemented here: bracket mirroring and number shaping (L3/L4), so mixed
 content such as `ABC سلام 123` may put the digits in the wrong place.
@@ -162,7 +164,7 @@ their output is attached to the workflow run as build artifacts:
 | probe | question |
 |---|---|
 | `probe-rtl-layout` | Runs the renderer's own pipeline and checks that reading the emitted cells in the corresponding direction reproduces the input. This is what distinguishes "the words moved" from "the words are wrong". |
-| `probe-para-dir` | How a row's paragraph direction should be decided. Compares Unicode P2/P3, which looks at the first strong character, against treating any strong RTL letter as decisive, on a prompt followed by Persian. Only the second reads back correctly. |
+| `probe-para-dir` | How a row's paragraph direction is decided. Prints the resolved levels and the final visual order for a prompt followed by Persian under both P2/P3, which looks at the first strong character, and the older rule that any strong RTL letter is decisive, so the difference is visible. |
 | `probe-glyph-order` | Whether DirectWrite returns the glyphs of an RTL run in logical or visual order. This decides whether rule L2 has to reverse the clusters. |
 | `probe-glyph-direction` | Whether DirectWrite reverses them anyway when asked for left to right. |
 | `probe-lamalef` | Which installed fonts fuse lam-alef, the mandatory ligature in Arabic script. On this machine: none of them, 0 of 22. |
@@ -287,7 +289,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 - `src/renderer/atlas/DWriteTextAnalysis.h`
 - `src/renderer/atlas/common.h`
 
-قاعدهٔ L2 یونیکد پیاده شده که ترتیب کلمات را درست می‌کند، و جهت پاراگراف هم همین‌جا تعیین می‌شود: هر سطری که حداقل یک حرف راست‌به‌چپ قوی داشته باشد راست‌به‌چپ است. این جایگزین قاعده‌های P2/P3 یونیکد شده که پاراگراف را بر اساس *اولین* حرف قوی تصمیم می‌گیرند. چون سطر ترمینال تقریباً همیشه با یک پرامپت انگلیسی شروع می‌شود، P2/P3 یک پرامپت به‌همراه متن فارسی را یک پاراگراف چپ‌به‌راست می‌دانست و بعد L2 کلمات فارسی را برعکس می‌کرد، یعنی آخرین کلمه‌ای که تایپ کرده‌اید کنار پرامپت نشان داده می‌شد. با گرفتن جهت از هر حرف راست‌به‌چپی، پرامپت سمت راست می‌افتد و کلمات به همان ترتیبی که تایپ کرده‌اید دیده می‌شوند. محل قرار گرفتن نویسه‌های خنثی مثل فاصله را خود DirectWrite بر اساس همان جهت پاراگراف مشخص می‌کند. پروب `probe-para-dir` در `tools/bidi-probe` همین دو قاعده را روی این مورد مقایسه می‌کند.
+قاعدهٔ L2 یونیکد پیاده شده که ترتیب کلمات را درست می‌کند، و جهت پاراگراف هم همین‌جا بر اساس قاعده‌های P2/P3 یونیکد تعیین می‌شود: سطری راست‌به‌چپ است که *اولین* حرف قوی آن راست‌به‌چپ باشد، و در غیر این صورت چپ‌به‌راست است. بنابراین سطری که با یک پرامپت انگلیسی شروع می‌شود یک پاراگراف چپ‌به‌راست می‌ماند، پرامپت همان‌جای خودش سمت چپ حفظ می‌شود، و هر متن فارسی، عربی یا عبری که بعد از آن بیاید یک بازهٔ راست‌به‌چپ درون همان پاراگراف است و مثل کاری که یک مرورگر یا ویرایشگر متن با محتوای ترکیبی می‌کند چیده می‌شود. سطری که با فارسی شروع شود یک پاراگراف راست‌به‌چپ است و از سمت راست چیده می‌شود. محل قرار گرفتن نویسه‌های خنثی مثل فاصله را خود DirectWrite بر اساس همان جهت پاراگراف مشخص می‌کند. پروب `probe-para-dir` در `tools/bidi-probe` سطوح حل‌شده و ترتیب نهایی تصویری را زیر هر دو قاعده چاپ می‌کند، یعنی همین قاعده و قاعدهٔ قدیمی‌تر که هر حرف راست‌به‌چپی کل سطر را راست‌به‌چپ می‌کرد، تا تفاوت دیده شود به‌جای اینکه درباره‌اش بحث شود.
 
 سطرهایی که هیچ متن راست‌به‌چپ ندارند دست‌نخورده می‌مانند، پس متن انگلیسی و عدد دقیقاً مثل قبل رسم می‌شود.
 

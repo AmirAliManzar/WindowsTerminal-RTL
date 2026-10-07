@@ -1156,10 +1156,7 @@ void AtlasEngine::_applyBidiVisualOrder(ShapedRow& row, const u16 y) noexcept
 
             if (permuted)
             {
-                // v1.24.11911.0 has two colour planes (background, foreground).
-                // The underlineBitmap plane was added to main later; iterate
-                // whatever this ref defines rather than naming a third plane.
-                u32* const planes[] = { _p.backgroundBitmap.data(), _p.foregroundBitmap.data() };
+                u32* const planes[3] = { _p.backgroundBitmap.data(), _p.foregroundBitmap.data(), _p.underlineBitmap.data() };
                 auto scratch = std::vector<u32>(cells);
                 for (u32* const plane : planes)
                 {

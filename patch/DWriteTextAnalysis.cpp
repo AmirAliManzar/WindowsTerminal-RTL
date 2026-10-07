@@ -85,25 +85,13 @@ HRESULT TextAnalysisSource::GetTextBeforePosition(UINT32 textPosition, const WCH
 
 DWRITE_READING_DIRECTION TextAnalysisSource::GetParagraphReadingDirection() noexcept
 {
-    // A row is a right-to-left paragraph whenever it contains any strong RTL
-    // letter, instead of only when its *first* strong character is RTL.
-    //
-    // Rule P2/P3 of the Unicode bidi algorithm would judge "PS> <Persian>" by
-    // its Latin prompt and call the paragraph LTR. Rule L2 then keeps the RTL
-    // run running leftward, which shows the last typed word nearest the prompt
-    // instead of the first. In a terminal every line is a prompt followed by
-    // whatever the user typed, so P2/P3 gets the base direction wrong for
-    // effectively every Persian, Arabic and Hebrew line.
-    //
-    // Treating any strong RTL letter as decisive puts the paragraph base on the
-    // right, so the prompt lands on the right and the words read in the order
-    // they were typed. RtlTerminal does the same thing.
-    for (UINT32 i = 0; i < _textLength; ++i)
+    // UBA rules P2/P3: the paragraph level is determined by the first strong
+    // directional character. Hardcoding LTR here is what prevented Arabic
+    // contextual shaping entirely.
+    const auto ch = firstStrongDirectional(_text, _textLength);
+    if (ch != 0 && isStrongRTL(ch))
     {
-        if (isStrongRTL(_text[i]))
-        {
-            return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
-        }
+        return DWRITE_READING_DIRECTION_RIGHT_TO_LEFT;
     }
     return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
 }
