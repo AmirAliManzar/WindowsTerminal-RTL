@@ -12,7 +12,7 @@
   helpers from reporting a compatibility view.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="0.0.7.0" name="WindowsTerminal.RTL.Portable"
+  <assemblyIdentity version="0.0.8.0" name="WindowsTerminal.RTL.Portable"
     type="win32"/>
   <description>Windows Terminal RTL portable launcher</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
