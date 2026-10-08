@@ -84,10 +84,12 @@ static std::vector<UINT16> RunGetGlyphs(IDWriteTextAnalyzer* analyzer, IDWriteFo
 
 int main(int argc, char** argv)
 {
-    if (argc < 2) { printf("usage: probe-real-shaping-chain.exe <familyName>\n"); return 1; }
     std::wstring family;
-    int n = MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, nullptr, 0);
-    family.resize(n); MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, &family[0], n);
+    if (argc >= 2)
+    {
+        int n = MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, nullptr, 0);
+        family.resize(n); MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, &family[0], n);
+    }
 
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     ComPtr<IDWriteFactory> factory;
@@ -96,8 +98,31 @@ int main(int argc, char** argv)
     factory->CreateTextAnalyzer(&analyzer);
     ComPtr<IDWriteFontCollection> coll;
     factory->GetSystemFontCollection(&coll, FALSE);
+
+    // The optional Arabic fonts this probe prefers are not installed on hosted
+    // CI runners, so fall back to families every Windows box has. The probe's
+    // conclusion (that AnalyzeScript turns positional shaping on) does not
+    // depend on which Arabic-capable face supplies the glyphs.
+    const wchar_t* candidates[] = { L"Segoe UI", L"Arial", L"Tahoma", L"Times New Roman" };
+    bool chosen = false;
+    if (!family.empty())
+    {
+        UINT32 i = 0; BOOL ex = FALSE;
+        chosen = SUCCEEDED(coll->FindFamilyName(family.c_str(), &i, &ex)) && ex;
+    }
+    if (!chosen)
+    {
+        family.clear();
+        for (const wchar_t* c : candidates)
+        {
+            UINT32 i = 0; BOOL ex = FALSE;
+            if (SUCCEEDED(coll->FindFamilyName(c, &i, &ex)) && ex) { family = c; chosen = true; break; }
+        }
+    }
+    if (!chosen) { printf("no usable font family on this machine; skipping\n"); return 0; }
+
     UINT32 idx = 0; BOOL exists = FALSE;
-    if (FAILED(coll->FindFamilyName(family.c_str(), &idx, &exists)) || !exists) { printf("family not found\n"); return 1; }
+    coll->FindFamilyName(family.c_str(), &idx, &exists);
     ComPtr<IDWriteFontFamily> fam;
     coll->GetFontFamily(idx, &fam);
     ComPtr<IDWriteFont> font;
@@ -105,9 +130,14 @@ int main(int argc, char** argv)
     ComPtr<IDWriteFontFace> face;
     font->CreateFontFace(&face);
 
-    const std::wstring salam = L"\u0633\u0644\u0627\u0645";
-    printf("family: %s\n\n", argv[1]);
+    {
+        int blen = WideCharToMultiByte(CP_UTF8, 0, family.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string buf(blen, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, family.c_str(), -1, &buf[0], blen, nullptr, nullptr);
+        printf("family: %s\n\n", buf.c_str());
+    }
 
+    const std::wstring salam = L"\u0633\u0644\u0627\u0645";
     printf("1) hand-set script analysis (what the earlier probes sent):\n");
     {
         DWRITE_SCRIPT_ANALYSIS hand{}; hand.script = 0x0600; hand.shapes = DWRITE_SCRIPT_SHAPES_DEFAULT;
