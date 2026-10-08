@@ -51,7 +51,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 $source      = Join-Path $repoRoot 'portable\PortableLauncher.cs'
 $manifest    = Join-Path $repoRoot 'portable\app.manifest'
-$icon        = Join-Path $repoRoot 'assets\installer-rtl.ico'
+$icon        = Join-Path $repoRoot 'assets\terminal-rtl.ico'
 $assemblyInfo = Join-Path $repoRoot 'installer\Properties\AssemblyInfo.cs'
 
 foreach ($f in @($source, $manifest, $icon, $assemblyInfo)) {

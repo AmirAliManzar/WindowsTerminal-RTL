@@ -1,13 +1,12 @@
 <#
 .SYNOPSIS
-    Generates assets/installer-rtl.ico: the installer's own download-themed icon.
+    Generates assets/installer.ico: the installer's own download icon.
 
 .DESCRIPTION
-    The terminal's icon is a terminal device with an RTL badge. The installer is a
-    different program and gets a different picture: a download box (an open tray or
-    package) with a down arrow landing in it, plus the same green RTL badge in the
-    same corner, drawn with the same green and ink as the terminal badge so the two
-    icons read as one family.
+    The terminal's icon is a terminal device with a green RTL badge. The installer
+    is a different program and gets a different picture: an open tray with a blue
+    down arrow landing in it, so the file reads as "download" at a glance and is
+    never confused with the terminal it installs.
 
     Frames are the standard 7 (16,20,24,32,48,64 as 32bpp DIBs, 256 as PNG) so the
     EXE looks right at every Explorer/taskbar size. Everything is drawn, so no
@@ -19,9 +18,8 @@ param(
 
 Add-Type -AssemblyName System.Drawing
 
-# The same palette the terminal badge uses, so the two icons are one family.
-$Green   = [System.Drawing.Color]::FromArgb(155, 240, 11)
-$Ink     = [System.Drawing.Color]::FromArgb(39, 60, 3)
+# A download icon: neutral case, blue arrow. It must not carry the terminal's
+# green badge, which is what marks the app itself.
 $Body    = [System.Drawing.Color]::FromArgb(216, 220, 224)   # light case
 $BodyDark = [System.Drawing.Color]::FromArgb(148, 156, 164)  # case shading
 $Screen  = [System.Drawing.Color]::FromArgb(238, 242, 246)   # tray interior
@@ -61,8 +59,7 @@ function Draw-InstallerIcon([int]$S) {
     $g.FillPath((New-Object System.Drawing.SolidBrush $Screen), $sheen)
 
     # ---------------------------------------------- open tray in the middle
-    # Kept above the badge so the two never overlap.
-    $trayY    = (256 * 0.50) * $u
+    $trayY    = (256 * 0.60) * $u
     $trayH    = (256 * 0.155) * $u
     $trayX    = $casePad + 34 * $u
     $trayW    = $caseW - 68 * $u
@@ -94,38 +91,6 @@ function Draw-InstallerIcon([int]$S) {
         (New-Object System.Drawing.PointF (($cx - $shaftW / 2), ($arrowBottom - $headH)))
     ))
     $g.FillPath((New-Object System.Drawing.SolidBrush $Arrow), $head)
-
-    # ---------------------------------------------- RTL badge, bottom-right
-    # The badge is a green plate inset into the corner of the case, sized so it
-    # never collides with the tray. Letters shrink to a down arrow below 48px.
-    $bw = (256 * 0.40) * $u
-    $bh = (256 * 0.155) * $u
-    $bx = $casePad + $caseW - $bw - 10 * $u
-    $by = $casePad + $caseH - $bh - 10 * $u
-    $badge = New-Object System.Drawing.RectangleF $bx, $by, $bw, $bh
-    $g.FillRectangle((New-Object System.Drawing.SolidBrush $Green), $badge)
-
-    if ($S -ge 48) {
-        $em = $bh * 0.80
-        $font = New-Object System.Drawing.Font "Consolas", $em, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
-        $sf = New-Object System.Drawing.StringFormat
-        $sf.Alignment     = [System.Drawing.StringAlignment]::Center
-        $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-        $g.DrawString("RTL", $font, (New-Object System.Drawing.SolidBrush $Ink), $badge, $sf)
-        $font.Dispose()
-    } else {
-        $pw = [Math]::Max(1.5, ($S * 0.09))
-        $pen = New-Object System.Drawing.Pen $Ink, $pw
-        $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-        $pen.EndCap   = [System.Drawing.Drawing2D.LineCap]::Round
-        $cx2 = $bx + $bw / 2
-        $g.DrawLine($pen, (New-Object System.Drawing.PointF ($cx2, ($by + $bh * 0.22))), (New-Object System.Drawing.PointF ($cx2, ($by + $bh * 0.72))))
-        $g.DrawLines($pen, @(
-            (New-Object System.Drawing.PointF (($cx2 - $bw * 0.24), ($by + $bh * 0.52)))
-            (New-Object System.Drawing.PointF ($cx2, ($by + $bh * 0.75)))
-            (New-Object System.Drawing.PointF (($cx2 + $bw * 0.24), ($by + $bh * 0.52)))
-        ))
-    }
 
     $g.Dispose()
     return $bmp

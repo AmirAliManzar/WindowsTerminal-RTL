@@ -839,7 +839,7 @@ namespace WindowsTerminalRtlInstaller
             };
         }
 
-        // The icon ships as /resource:assets\installer-rtl.ico so the wizard can
+        // The icon ships as /resource:assets\installer.ico so the wizard can
         // show it at full size instead of the 16px ExtractAssociatedIcon gives.
         private static Icon LoadEmbeddedIcon()
         {
@@ -848,8 +848,7 @@ namespace WindowsTerminalRtlInstaller
                 var asm = Assembly.GetExecutingAssembly();
                 foreach (var name in asm.GetManifestResourceNames())
                 {
-                    if (name.EndsWith("installer-rtl.ico", StringComparison.OrdinalIgnoreCase) ||
-                        name.EndsWith("terminal-rtl.ico", StringComparison.OrdinalIgnoreCase))
+                    if (name.EndsWith("installer.ico", StringComparison.OrdinalIgnoreCase))
                     {
                         using (var s = asm.GetManifestResourceStream(name))
                             return new Icon(s);
