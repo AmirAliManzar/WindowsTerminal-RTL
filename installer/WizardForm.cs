@@ -59,7 +59,7 @@ namespace WindowsTerminalRtlInstaller
         private TextBox _txtDir;
         private CheckBox _chkStart, _chkDesktop;
         private Label _lblDoneTitle, _lblDoneBody;
-        private Button _btnLaunch, _btnRetry, _btnUninstall, _btnRepair;
+        private Button _btnLaunch, _btnRetry, _btnUninstall, _btnRepair, _btnUpdate;
         private Label _lblWelcomeTitle, _lblWelcomeBody, _lblWelcomeStatus;
         private Label _lblArchTitle, _lblArchNote, _lblDestTitle, _lblOptionsTitle, _lblOptionsNote;
         private Button _btnBrowse;
@@ -206,6 +206,8 @@ namespace WindowsTerminalRtlInstaller
             _lblWelcomeTitle.Text = Strings.Get(Strings.WelcomeTitle);
             _lblWelcomeBody.Text = Strings.Get(Strings.WelcomeBody);
             _btnUninstall.Text = Strings.Get(Strings.Uninstall);
+            _btnRepair.Text = Strings.Get(Strings.Repair);
+            _btnUpdate.Text = Strings.Get(Strings.Update);
             RefreshWelcomeStatus();
 
             _lblArchTitle.Text = Strings.Get(Strings.ArchTitle);
@@ -248,6 +250,8 @@ namespace WindowsTerminalRtlInstaller
             _btnNext.Location = At(144, 12, 132);
             _btnCancel.Location = At(486, 12, 110);
             _btnUninstall.Location = At(24, 252, 140);
+            _btnRepair.Location = At(174, 252, 140);
+            _btnUpdate.Location = At(324, 252, 140);
             _txtDir.Location = At(24, 78, 442);
             _btnBrowse.Location = At(476, 78, 120);
             _btnLaunch.Location = At(24, 240, 170);
@@ -325,18 +329,45 @@ namespace WindowsTerminalRtlInstaller
                 Location = new Point(24, 218), Size = new Size(w, 20),
             };
             _btnUninstall = MakeButton(Strings.Get(Strings.Uninstall), 140);
-            _btnUninstall.Location = new Point(24, 252);
+            _btnUninstall.Location = At(24, 252, 140);
             _btnUninstall.Click += (s, e) => StartUninstall();
 
             // Repair sits beside Uninstall and is only offered when an install is
             // already present. It rebuilds the shortcuts and the Add or remove
             // programs entry without downloading anything.
             _btnRepair = MakeButton(Strings.Get(Strings.Repair), 140);
-            _btnRepair.Location = new Point(174, 252);
+            _btnRepair.Location = At(174, 252, 140);
             _btnRepair.Click += (s, e) => StartRepair();
 
-            p.Controls.AddRange(new Control[] { _lblWelcomeTitle, _lblWelcomeBody, _lblWelcomeStatus, _btnUninstall, _btnRepair });
+            // Update sits beside Repair and appears only when the installed payload
+            // is older than this installer. Unlike Repair it downloads the latest
+            // release and replaces the payload, which is what "I ran the new
+            // installer" is expected to do.
+            _btnUpdate = MakeButton(Strings.Get(Strings.Update), 140);
+            _btnUpdate.Location = At(324, 252, 140);
+            _btnUpdate.Click += (s, e) => StartUpdate();
+
+            p.Controls.AddRange(new Control[] { _lblWelcomeTitle, _lblWelcomeBody, _lblWelcomeStatus, _btnUninstall, _btnRepair, _btnUpdate });
             return p;
+        }
+
+        // True when an install is present on disk and its recorded version is older
+        // than this installer. That is the only situation in which Update, rather
+        // than Repair, is the action the user came for.
+        private static bool UpdateAvailable()
+        {
+            string dir = InstallJob.FindInstallDir();
+            if (string.IsNullOrEmpty(dir))
+                return false;
+            string installed = InstallJob.ReadInstalledVersion(dir);
+            if (string.IsNullOrEmpty(installed))
+                return false;
+            Version have, want;
+            if (!Version.TryParse(installed, out have))
+                return false;
+            if (!Version.TryParse(Assembly.GetExecutingAssembly().GetName().Version.ToString(), out want))
+                return false;
+            return have < want;
         }
 
         private void RefreshWelcomeStatus()
@@ -349,6 +380,8 @@ namespace WindowsTerminalRtlInstaller
                 _btnUninstall.Visible = (existing != null);
             if (_btnRepair != null)
                 _btnRepair.Visible = (existing != null);
+            if (_btnUpdate != null)
+                _btnUpdate.Visible = (existing != null && UpdateAvailable());
         }
 
         private Control BuildArch()
@@ -554,6 +587,7 @@ namespace WindowsTerminalRtlInstaller
             // The uninstall button only belongs on the welcome page.
             RefreshWelcomeStatus();
             _btnUninstall.Visible = (index == 0 && InstallJob.FindInstallDir() != null);
+            _btnUpdate.Visible = (index == 0 && UpdateAvailable());
 
             _btnBack.Visible = (index >= 1 && index <= 3);
             _btnCancel.Visible = (index != 4 && index != 5);
@@ -644,6 +678,7 @@ namespace WindowsTerminalRtlInstaller
             _lblStatus.Text = Strings.Get(Strings.StatusUninstalling);
             _btnUninstall.Visible = false;
             _btnRepair.Visible = false;
+            _btnUpdate.Visible = false;
             SetWorking(true);
             ShowPage(4);
 
@@ -665,10 +700,53 @@ namespace WindowsTerminalRtlInstaller
             _lblStatus.Text = Strings.Get(Strings.StatusRepairing);
             _btnUninstall.Visible = false;
             _btnRepair.Visible = false;
+            _btnUpdate.Visible = false;
             SetWorking(true);
             ShowPage(4);
 
             var th = new Thread(() => RunJob(() => _job.Repair(dir)));
+            th.IsBackground = true;
+            th.Start();
+        }
+
+        // Update is the action that actually replaces the payload: it downloads the
+        // latest release over the existing install, keeping the same folder and the
+        // same architecture. Repair cannot do this, which is why the two buttons
+        // exist side by side.
+        private void StartUpdate()
+        {
+            string dir = InstallJob.FindInstallDir();
+            if (string.IsNullOrEmpty(dir))
+            {
+                StartInstall();
+                return;
+            }
+            string arch = InstallJob.ReadInstalledArch(dir);
+            if (string.IsNullOrEmpty(arch))
+                arch = InstallJob.DetectArchitecture();
+
+            var s = new InstallSettings();
+            s.InstallDir = dir;
+            s.Architecture = arch;
+            s.StartMenuShortcut = true;
+            s.DesktopShortcut = true;
+            s.Force = true;
+            _installDir = Path.GetFullPath(s.InstallDir);
+            _uninstalling = false;
+            _repairing = false;
+
+            _txtLog.Clear();
+            _progress.Value = 0;
+            _progress.Style = ProgressBarStyle.Continuous;
+            _lblPercent.Text = "";
+            _lblStatus.Text = Strings.Get(Strings.StatusDownloading);
+            _btnUninstall.Visible = false;
+            _btnRepair.Visible = false;
+            _btnUpdate.Visible = false;
+            SetWorking(true);
+            ShowPage(4);
+
+            var th = new Thread(() => RunJob(() => _job.Install(s)));
             th.IsBackground = true;
             th.Start();
         }

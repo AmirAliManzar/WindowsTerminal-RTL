@@ -50,6 +50,12 @@ namespace WindowsTerminalRtlInstaller
         // The current installer version, shown in Add or remove programs.
         private static readonly Version Version = Assembly.GetExecutingAssembly().GetName().Version;
 
+        // The payload records the release it came from in this file. Without it
+        // there is no way to tell an older install from a current one, and Repair
+        // would advertise the installer's version in Add or remove programs even
+        // when the payload on disk was never replaced.
+        private const string VersionFileName = "version.txt";
+
         private static readonly HttpClient Http = new HttpClient(
             new HttpClientHandler { AllowAutoRedirect = true });
 
@@ -92,6 +98,60 @@ namespace WindowsTerminalRtlInstaller
                 return fromRegistry;
             string dir = DefaultInstallDir();
             return File.Exists(Path.Combine(dir, ExeName)) ? dir : null;
+        }
+
+        // The version of the payload sitting in installDir, or null when the
+        // folder predates version.txt or is not one of our installs at all.
+        public static string ReadInstalledVersion(string installDir)
+        {
+            if (string.IsNullOrEmpty(installDir))
+                return null;
+            try
+            {
+                string path = Path.Combine(installDir, VersionFileName);
+                if (!File.Exists(path))
+                    return null;
+                string raw = File.ReadAllText(path).Trim();
+                return raw.Length == 0 ? null : raw;
+            }
+            catch { return null; }
+        }
+
+        // The architecture the payload was built for, read out of the
+        // machine-generated portable.json beside the exe, or null when it is
+        // not there to be read.
+        public static string ReadInstalledArch(string installDir)
+        {
+            if (string.IsNullOrEmpty(installDir))
+                return null;
+            try
+            {
+                string path = Path.Combine(installDir, "portable.json");
+                if (!File.Exists(path))
+                    return null;
+                string text = File.ReadAllText(path);
+                string key = "\"arch\"";
+                int at = text.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+                if (at < 0) return null;
+                int open = text.IndexOf('"', at + key.Length);
+                if (open < 0) return null;
+                int close = text.IndexOf('"', open + 1);
+                if (close < 0) return null;
+                return text.Substring(open + 1, close - open - 1);
+            }
+            catch { return null; }
+        }
+
+        // Turns a release tag ("v0.0.10") into the plain version string that Add
+        // or remove programs expects ("0.0.10").
+        private static string NormalizeVersion(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return null;
+            string s = tag.Trim();
+            if (s.Length > 0 && (s[0] == 'v' || s[0] == 'V'))
+                s = s.Substring(1);
+            return s.Length == 0 ? null : s;
         }
 
         // Reads the directory recorded in the Add or remove programs entry. This is
@@ -198,6 +258,16 @@ namespace WindowsTerminalRtlInstaller
                 int count = Directory.EnumerateFiles(installDir, "*", SearchOption.AllDirectories).Count();
                 Step("copied " + count + " files");
 
+                // Record which release the payload came from. A later Repair reads
+                // this so Add or remove programs reports the payload's own version
+                // instead of whichever installer happened to rebuild the entry.
+                string released = NormalizeVersion(release.Tag);
+                if (!string.IsNullOrEmpty(released))
+                {
+                    try { File.WriteAllText(Path.Combine(installDir, VersionFileName), released); }
+                    catch { /* a missing version note must not fail the install */ }
+                }
+
                 CreateShortcuts(destExe, installDir, opts.StartMenuShortcut, opts.DesktopShortcut);
                 RegisterInPrograms(installDir, destExe);
 
@@ -302,10 +372,16 @@ namespace WindowsTerminalRtlInstaller
             // Repair rebuilds both shortcuts; there is no repair path for "create
             // no shortcuts", and an ARP entry without them is what broken looks like.
             CreateShortcuts(destExe, installDir, true, true);
-            RegisterInPrograms(installDir, destExe);
+
+            // The entry must describe the payload that is actually on disk. Before
+            // version.txt existed, Repair stamped the installer's own version here
+            // and Add or remove programs would read "0.0.10" over a 0.0.9 install.
+            string payloadVersion = ReadInstalledVersion(installDir);
+            RegisterInPrograms(installDir, destExe, payloadVersion);
 
             Step("recreated the Start menu and desktop shortcuts");
-            Step("recreated the Add or remove programs entry");
+            Step("recreated the Add or remove programs entry" +
+                 (string.IsNullOrEmpty(payloadVersion) ? "" : " (version " + payloadVersion + ")"));
             Step("done. Your settings were left untouched.");
         }
 
@@ -315,12 +391,22 @@ namespace WindowsTerminalRtlInstaller
         // current user, which is exactly the audience of a LocalAppData install.
         public static void RegisterInPrograms(string installDir, string destExe)
         {
+            RegisterInPrograms(installDir, destExe, null);
+        }
+
+        // displayVersion carries the payload's own version. Repair passes it so the
+        // entry never advertises newer files than are actually on disk; Install
+        // leaves it null and falls back to the installer's version, which matches.
+        public static void RegisterInPrograms(string installDir, string destExe, string displayVersion)
+        {
             string uninstaller = DropUninstaller(installDir);
             string key = UninstallKey;
             using (var rk = Registry.CurrentUser.CreateSubKey(key))
             {
                 rk.SetValue("DisplayName", AppName, RegistryValueKind.String);
-                rk.SetValue("DisplayVersion", Version.ToString(3), RegistryValueKind.String);
+                rk.SetValue("DisplayVersion",
+                    !string.IsNullOrEmpty(displayVersion) ? displayVersion : Version.ToString(3),
+                    RegistryValueKind.String);
                 rk.SetValue("Publisher", "AmirAliManzar", RegistryValueKind.String);
                 rk.SetValue("InstallLocation", installDir, RegistryValueKind.String);
                 rk.SetValue("DisplayIcon", destExe + ",0", RegistryValueKind.String);
