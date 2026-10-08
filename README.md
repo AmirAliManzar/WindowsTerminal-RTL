@@ -38,9 +38,11 @@ Download the build for your architecture and unzip it anywhere.
   between the two at any point. No admin rights, and the Store terminal is
   untouched. The install registers itself in *Add or remove programs*, so it can
   be removed from Settings. Running the installer again over an existing install
-  offers **Repair**, which recreates the shortcuts and the *Add or remove
-  programs* entry without re-downloading, and **Uninstall**. Command line:
-  `--uninstall` removes, `--repair` rebuilds the shortcuts.
+  offers **Update** when the installed build is older than the installer, which
+  downloads the latest release and replaces the build in place; **Repair**, which
+  recreates the shortcuts and the *Add or remove programs* entry without
+  re-downloading; and **Uninstall**. Command line: `--uninstall` removes,
+  `--repair` rebuilds the shortcuts.
 - **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
   and nothing outside that folder is touched.
 - **One file, not even a zip:** run `WindowsTerminal-RTL-Portable-x64.exe` (or
@@ -271,7 +273,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 فایل zip را هرجا باز کنید.
 
-- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. نصب خودش را در *Add or remove programs* ثبت می‌کند، پس از همان تنظیمات هم قابل حذف است. اگر نصب‌کننده را دوباره روی نصبی که از قبل وجود دارد اجرا کنید، دو گزینه پیش شماست: **تعمیر** که میانبرها و ثبت *Add or remove programs* را بدون دانلود دوباره می‌سازد، و **حذف نصب**. از خط فرمان هم `--uninstall` حذف می‌کند و `--repair` میانبرها را بازسازی می‌کند.
+- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. نصب خودش را در *Add or remove programs* ثبت می‌کند، پس از همان تنظیمات هم قابل حذف است. اگر نصب‌کننده را دوباره روی نصبی که از قبل وجود دارد اجرا کنید، سه گزینه پیش شماست: **بروزرسانی** وقتی بیلد نصب‌شده قدیمی‌تر از نصب‌کننده باشد که آخرین نسخه را دانلود و بیلد را همان‌جا جایگزین می‌کند، **تعمیر** که میانبرها و ثبت *Add or remove programs* را بدون دانلود دوباره می‌سازد، و **حذف نصب**. از خط فرمان هم `--uninstall` حذف می‌کند و `--repair` میانبرها را بازسازی می‌کند.
 - **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
 - **یک فایل، حتی بدون zip:** `WindowsTerminal-RTL-Portable-x64.exe` (یا نسخهٔ `arm64`) را از هرجا که گذاشته‌اید اجرا کنید. کل بیلد داخل همان یک فایل است. اولین اجرا آن را در `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` باز می‌کند و ترمینال را بالا می‌آورد، و اجراهای بعدی فوری هستند، چون محتوا از قبل روی دیسک است و نشانگر هنوز با آن مطابقت دارد. چیزی ثبت نمی‌شود و دسترسی مدیر خواسته نمی‌شود. یک ریلیز جدید پوشهٔ نسخهٔ قبلی را جایگزین می‌کند، پس دو نسخه هرگز با هم قاطی نمی‌شوند.
 - **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
