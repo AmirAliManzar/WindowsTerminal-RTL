@@ -59,7 +59,7 @@ namespace WindowsTerminalRtlInstaller
         private TextBox _txtDir;
         private CheckBox _chkStart, _chkDesktop;
         private Label _lblDoneTitle, _lblDoneBody;
-        private Button _btnLaunch, _btnRetry, _btnUninstall;
+        private Button _btnLaunch, _btnRetry, _btnUninstall, _btnRepair;
         private Label _lblWelcomeTitle, _lblWelcomeBody, _lblWelcomeStatus;
         private Label _lblArchTitle, _lblArchNote, _lblDestTitle, _lblOptionsTitle, _lblOptionsNote;
         private Button _btnBrowse;
@@ -72,6 +72,7 @@ namespace WindowsTerminalRtlInstaller
 
         private string _installDir;
         private bool _uninstalling;
+        private bool _repairing;
 
         public WizardForm()
         {
@@ -327,7 +328,14 @@ namespace WindowsTerminalRtlInstaller
             _btnUninstall.Location = new Point(24, 252);
             _btnUninstall.Click += (s, e) => StartUninstall();
 
-            p.Controls.AddRange(new Control[] { _lblWelcomeTitle, _lblWelcomeBody, _lblWelcomeStatus, _btnUninstall });
+            // Repair sits beside Uninstall and is only offered when an install is
+            // already present. It rebuilds the shortcuts and the Add or remove
+            // programs entry without downloading anything.
+            _btnRepair = MakeButton(Strings.Get(Strings.Repair), 140);
+            _btnRepair.Location = new Point(174, 252);
+            _btnRepair.Click += (s, e) => StartRepair();
+
+            p.Controls.AddRange(new Control[] { _lblWelcomeTitle, _lblWelcomeBody, _lblWelcomeStatus, _btnUninstall, _btnRepair });
             return p;
         }
 
@@ -339,6 +347,8 @@ namespace WindowsTerminalRtlInstaller
                 : Strings.Get(Strings.NotInstalled);
             if (_btnUninstall != null)
                 _btnUninstall.Visible = (existing != null);
+            if (_btnRepair != null)
+                _btnRepair.Visible = (existing != null);
         }
 
         private Control BuildArch()
@@ -627,15 +637,38 @@ namespace WindowsTerminalRtlInstaller
             string dir = InstallJob.FindInstallDir() ?? InstallJob.DefaultInstallDir();
             _installDir = null;
             _uninstalling = true;
+            _repairing = false;
             _txtLog.Clear();
             _progress.Value = 0;
             _lblPercent.Text = "";
             _lblStatus.Text = Strings.Get(Strings.StatusUninstalling);
             _btnUninstall.Visible = false;
+            _btnRepair.Visible = false;
             SetWorking(true);
             ShowPage(4);
 
             var th = new Thread(() => RunJob(() => _job.Uninstall(dir)));
+            th.IsBackground = true;
+            th.Start();
+        }
+
+        private void StartRepair()
+        {
+            string dir = InstallJob.FindInstallDir() ?? InstallJob.DefaultInstallDir();
+            _installDir = null;
+            _uninstalling = false;
+            _repairing = true;
+            _txtLog.Clear();
+            _progress.Value = 0;
+            _progress.Style = ProgressBarStyle.Marquee;
+            _lblPercent.Text = "";
+            _lblStatus.Text = Strings.Get(Strings.StatusRepairing);
+            _btnUninstall.Visible = false;
+            _btnRepair.Visible = false;
+            SetWorking(true);
+            ShowPage(4);
+
+            var th = new Thread(() => RunJob(() => _job.Repair(dir)));
             th.IsBackground = true;
             th.Start();
         }
@@ -662,16 +695,19 @@ namespace WindowsTerminalRtlInstaller
             SetWorking(false);
             bool ok = (error == null);
             bool remove = _uninstalling;
+            bool repair = _repairing;
 
             _lblDoneTitle.Text = !ok ? Strings.Get(Strings.DoneTitleFail)
                                  : remove ? Strings.Get(Strings.DoneTitleOkRemove)
+                                 : repair ? Strings.Get(Strings.DoneTitleOkRepair)
                                           : Strings.Get(Strings.DoneTitleOk);
             _lblDoneTitle.ForeColor = ok ? Fg : Color.FromArgb(255, 120, 120);
 
             if (ok)
             {
                 _lblDoneBody.Text = remove ? Strings.Get(Strings.DoneBodyOkRemove)
-                                           : Strings.Get(Strings.DoneBodyOk);
+                                    : repair ? Strings.Get(Strings.DoneBodyOkRepair)
+                                             : Strings.Get(Strings.DoneBodyOk);
             }
             else
             {
@@ -803,7 +839,7 @@ namespace WindowsTerminalRtlInstaller
             };
         }
 
-        // The icon ships as /resource:assets\terminal-rtl.ico so the wizard can
+        // The icon ships as /resource:assets\installer-rtl.ico so the wizard can
         // show it at full size instead of the 16px ExtractAssociatedIcon gives.
         private static Icon LoadEmbeddedIcon()
         {
@@ -812,7 +848,8 @@ namespace WindowsTerminalRtlInstaller
                 var asm = Assembly.GetExecutingAssembly();
                 foreach (var name in asm.GetManifestResourceNames())
                 {
-                    if (name.EndsWith("terminal-rtl.ico", StringComparison.OrdinalIgnoreCase))
+                    if (name.EndsWith("installer-rtl.ico", StringComparison.OrdinalIgnoreCase) ||
+                        name.EndsWith("terminal-rtl.ico", StringComparison.OrdinalIgnoreCase))
                     {
                         using (var s = asm.GetManifestResourceStream(name))
                             return new Icon(s);

@@ -27,6 +27,8 @@ namespace WindowsTerminalRtlInstaller
             InstalledAt        = "InstalledAt",
             NotInstalled       = "NotInstalled",
             Uninstall          = "Uninstall",
+            Repair             = "Repair",
+            Repairing          = "Repairing",
             ArchTitle          = "ArchTitle",
             ArchAuto           = "ArchAuto",
             ArchX64            = "ArchX64",
@@ -46,6 +48,7 @@ namespace WindowsTerminalRtlInstaller
             StatusPreparing    = "StatusPreparing",
             StatusDownloading  = "StatusDownloading",
             StatusUninstalling = "StatusUninstalling",
+            StatusRepairing    = "StatusRepairing",
             Back               = "Back",
             Next               = "Next",
             Cancel             = "Cancel",
@@ -55,6 +58,8 @@ namespace WindowsTerminalRtlInstaller
             Launch             = "Launch",
             DoneTitleOk        = "DoneTitleOk",
             DoneBodyOk         = "DoneBodyOk",
+            DoneTitleOkRepair  = "DoneTitleOkRepair",
+            DoneBodyOkRepair   = "DoneBodyOkRepair",
             DoneTitleOkRemove  = "DoneTitleOkRemove",
             DoneBodyOkRemove   = "DoneBodyOkRemove",
             DoneTitleFail      = "DoneTitleFail",
@@ -88,6 +93,7 @@ namespace WindowsTerminalRtlInstaller
             { InstalledAt,        "Installed at:  " },
             { NotInstalled,       "Not installed yet." },
             { Uninstall,          "Uninstall" },
+            { Repair,             "Repair" },
             { ArchTitle,          "Download architecture" },
             { ArchAuto,           "Automatic (match this computer, recommended)" },
             { ArchX64,            "x64, Intel / AMD" },
@@ -107,6 +113,7 @@ namespace WindowsTerminalRtlInstaller
             { StatusPreparing,    "Preparing" },
             { StatusDownloading,  "Downloading" },
             { StatusUninstalling, "Uninstalling" },
+            { StatusRepairing,    "Repairing" },
             { Back,               "Back" },
             { Next,               "Next" },
             { Cancel,             "Cancel" },
@@ -120,6 +127,11 @@ namespace WindowsTerminalRtlInstaller
                 "Search the Start menu, or use the desktop shortcut, to open it.\n" +
                 "Your settings were picked up automatically.\n\n" +
                 "To remove it later, open this installer again and choose Uninstall." },
+            { DoneTitleOkRepair,  "Repair finished" },
+            { DoneBodyOkRepair,
+                "Windows Terminal RTL was repaired.\n\n" +
+                "Shortcuts and the Add or remove programs entry were recreated.\n" +
+                "Your settings were left untouched." },
             { DoneTitleOkRemove,  "Uninstall finished" },
             { DoneBodyOkRemove,   "Windows Terminal RTL was removed.\nYour settings were left untouched." },
             { DoneTitleFail,      "Installation failed" },
@@ -157,6 +169,7 @@ namespace WindowsTerminalRtlInstaller
             { InstalledAt,        "نصب شده در:  " },
             { NotInstalled,       "هنوز نصب نشده است." },
             { Uninstall,          "حذف نصب" },
+            { Repair,             "تعمیر" },
             { ArchTitle,          "معماری دانلود" },
             { ArchAuto,           "خودکار (بر اساس این کامپیوتر، پیشنهادی)" },
             { ArchX64,            "x64، Intel / AMD" },
@@ -176,6 +189,7 @@ namespace WindowsTerminalRtlInstaller
             { StatusPreparing,    "آماده سازی" },
             { StatusDownloading,  "در حال دانلود" },
             { StatusUninstalling, "در حال حذف نصب" },
+            { StatusRepairing,    "در حال تعمیر" },
             { Back,               "برگشت" },
             { Next,               "بعدی" },
             { Cancel,             "انصراف" },
@@ -189,6 +203,11 @@ namespace WindowsTerminalRtlInstaller
                 "برای اجرا در منوی Start جستجو کنید یا از میانبر دسکتاپ استفاده کنید.\n" +
                 "تنظیمات شما به طور خودکار به کار گرفته شد.\n\n" +
                 "برای حذف نصب بعدا این برنامه را دوباره باز کنید و حذف نصب را بزنید." },
+            { DoneTitleOkRepair,  "تعمیر انجام شد" },
+            { DoneBodyOkRepair,
+                "Windows Terminal RTL تعمیر شد.\n\n" +
+                "میانبرها و ثبت در Add or remove programs دوباره ساخته شد.\n" +
+                "تنظیمات شما دست نخورده ماند." },
             { DoneTitleOkRemove,  "حذف نصب انجام شد" },
             { DoneBodyOkRemove,   "Windows Terminal RTL حذف شد.\nتنظیمات شما دست نخورده ماند." },
             { DoneTitleFail,      "نصب ناموفق بود" },

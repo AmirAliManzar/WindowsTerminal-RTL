@@ -22,6 +22,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web.Script.Serialization;
+using Microsoft.Win32;
 
 namespace WindowsTerminalRtlInstaller
 {
@@ -40,6 +41,14 @@ namespace WindowsTerminalRtlInstaller
         public const string Repo = "WindowsTerminal-RTL";
         public const string AppName = "Windows Terminal RTL";
         public const string ExeName = "WindowsTerminal.exe";
+
+        // The Add or remove programs entry. Registering here is what makes the app
+        // uninstallable from Settings without admin rights, and what lets the
+        // installer detect a prior install of its own.
+        public const string UninstallKeyName = "WindowsTerminal-RTL";
+
+        // The current installer version, shown in Add or remove programs.
+        private static readonly Version Version = Assembly.GetExecutingAssembly().GetName().Version;
 
         private static readonly HttpClient Http = new HttpClient(
             new HttpClientHandler { AllowAutoRedirect = true });
@@ -71,10 +80,43 @@ namespace WindowsTerminalRtlInstaller
         }
 
         // Where an existing install lives, or null if there is none.
+        // The Add or remove programs entry is the authority here: it records the
+        // directory the install actually went to, which can be a custom one the
+        // user picked. Falling back to the default directory alone would miss
+        // those installs, and would also miss an install whose directory was
+        // deleted by hand while the entry remains.
         public static string FindInstallDir()
         {
+            string fromRegistry = ReadInstallLocation();
+            if (!string.IsNullOrEmpty(fromRegistry))
+                return fromRegistry;
             string dir = DefaultInstallDir();
             return File.Exists(Path.Combine(dir, ExeName)) ? dir : null;
+        }
+
+        // Reads the directory recorded in the Add or remove programs entry. This is
+        // what the wizard and the uninstaller use to find an install the user may
+        // have put anywhere, and what makes --uninstall launched from Settings land
+        // on the right folder instead of guessing the default.
+        public static string ReadInstallLocation()
+        {
+            try
+            {
+                using (var rk = Registry.CurrentUser.OpenSubKey(UninstallKey))
+                {
+                    if (rk == null) return null;
+                    string loc = rk.GetValue("InstallLocation") as string;
+                    if (!string.IsNullOrEmpty(loc) && Directory.Exists(loc))
+                        return loc;
+                    // The entry is there but the folder is gone: report the recorded
+                    // location anyway so the caller can decide. Uninstall wants this
+                    // so it can clean up a half-deleted install.
+                    if (!string.IsNullOrEmpty(loc))
+                        return loc;
+                }
+            }
+            catch { }
+            return null;
         }
 
         public static string DetectArchitecture()
@@ -157,6 +199,7 @@ namespace WindowsTerminalRtlInstaller
                 Step("copied " + count + " files");
 
                 CreateShortcuts(destExe, installDir, opts.StartMenuShortcut, opts.DesktopShortcut);
+                RegisterInPrograms(installDir, destExe);
 
                 Step("done. Search the Start menu for \"" + AppName + "\".");
                 Step("Your settings carry over automatically:");
@@ -170,6 +213,11 @@ namespace WindowsTerminalRtlInstaller
 
         public void Uninstall(string installDir)
         {
+            // Settings launches "uninstall.exe --uninstall" with no path, so the
+            // recorded InstallLocation is the only record of where the app went.
+            // Prefer it; the explicit argument wins when the caller supplies one.
+            if (string.IsNullOrEmpty(installDir))
+                installDir = ReadInstallLocation();
             if (string.IsNullOrEmpty(installDir))
                 installDir = DefaultInstallDir();
             else
@@ -178,6 +226,7 @@ namespace WindowsTerminalRtlInstaller
             Step("uninstalling " + AppName);
 
             CloseRunningInstances(installDir);
+            UnregisterFromPrograms();
 
             string startMenu = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Programs),
@@ -197,6 +246,20 @@ namespace WindowsTerminalRtlInstaller
 
             if (Directory.Exists(installDir))
             {
+                // If this uninstaller is running from inside installDir, it holds a
+                // lock on its own file and the folder delete below would leave it
+                // behind. Hand the final rmtree to a batch file in TEMP that waits
+                // for this process to exit, then removes the folder and itself.
+                string runningExe = Assembly.GetExecutingAssembly().Location;
+                bool selfDeleting = !string.IsNullOrEmpty(runningExe) &&
+                    runningExe.StartsWith(installDir, StringComparison.OrdinalIgnoreCase);
+                if (selfDeleting)
+                {
+                    ScheduleSelfDelete(installDir);
+                    Step("removed everything except this uninstaller, which cleans itself up on exit");
+                    return;
+                }
+
                 TryDelete(installDir);
                 Step("removed " + installDir);
             }
@@ -208,6 +271,179 @@ namespace WindowsTerminalRtlInstaller
             Step("done. Your settings at");
             Step("  %LOCALAPPDATA%\\Microsoft\\Windows Terminal\\settings.json");
             Step("are untouched, and the Store terminal is untouched too.");
+        }
+
+        // ------------------------------------------------------ repair + ARP
+
+        // Recreates the shortcuts and the Add or remove programs entry for an
+        // install that is already on disk, without re-downloading anything. This
+        // is what the wizard offers when the app is already installed and the
+        // user only needs to fix up Start menu entries or a deleted ARP entry.
+        public void Repair(string installDir)
+        {
+            if (string.IsNullOrEmpty(installDir))
+                installDir = ReadInstallLocation();
+            if (string.IsNullOrEmpty(installDir))
+                installDir = DefaultInstallDir();
+            else
+                installDir = Path.GetFullPath(installDir);
+
+            Step("repairing " + AppName);
+
+            string destExe = Path.Combine(installDir, ExeName);
+            if (!File.Exists(destExe))
+                throw new InvalidOperationException(installDir + " has no " + ExeName + ", nothing to repair");
+
+            // Repair is deliberately non-destructive: it only rebuilds shortcuts
+            // and the Add or remove programs entry, so unlike Uninstall it does
+            // not close a terminal the user has open. The only file it writes is
+            // uninstall.exe, which is never held by a running terminal.
+
+            // Repair rebuilds both shortcuts; there is no repair path for "create
+            // no shortcuts", and an ARP entry without them is what broken looks like.
+            CreateShortcuts(destExe, installDir, true, true);
+            RegisterInPrograms(installDir, destExe);
+
+            Step("recreated the Start menu and desktop shortcuts");
+            Step("recreated the Add or remove programs entry");
+            Step("done. Your settings were left untouched.");
+        }
+
+        // Writes the per-user Add or remove programs entry. Settings only supports
+        // per-machine entries for MSI packages, so a no-admin install uses the
+        // HKCU view of the same Uninstall key; Settings reads that view for the
+        // current user, which is exactly the audience of a LocalAppData install.
+        public static void RegisterInPrograms(string installDir, string destExe)
+        {
+            string uninstaller = DropUninstaller(installDir);
+            string key = UninstallKey;
+            using (var rk = Registry.CurrentUser.CreateSubKey(key))
+            {
+                rk.SetValue("DisplayName", AppName, RegistryValueKind.String);
+                rk.SetValue("DisplayVersion", Version.ToString(3), RegistryValueKind.String);
+                rk.SetValue("Publisher", "AmirAliManzar", RegistryValueKind.String);
+                rk.SetValue("InstallLocation", installDir, RegistryValueKind.String);
+                rk.SetValue("DisplayIcon", destExe + ",0", RegistryValueKind.String);
+                // Uninstalling from Settings relaunches the uninstaller copy that is
+                // dropped beside the app, so it still works after the downloaded
+                // installer is deleted.
+                rk.SetValue("UninstallString", UninstallCommand(installDir), RegistryValueKind.String);
+                rk.SetValue("QuietUninstallString", UninstallCommand(installDir), RegistryValueKind.String);
+                rk.SetValue("NoModify", 1, RegistryValueKind.DWord);
+                rk.SetValue("NoRepair", 0, RegistryValueKind.DWord);
+                rk.SetValue("EstimatedSize", EstimatedSizeKb(installDir), RegistryValueKind.DWord);
+            }
+        }
+
+        public static void UnregisterFromPrograms()
+        {
+            try { Registry.CurrentUser.DeleteSubKey(UninstallKey, throwOnMissingSubKey: false); }
+            catch { /* a leftover entry should never block an uninstall */ }
+        }
+
+        // True when the Add or remove programs entry exists, which is a stronger
+        // signal than a leftover folder: a manual delete of the install directory
+        // leaves the entry behind, and that is the case Repair is meant to fix.
+        public static bool IsRegisteredInPrograms()
+        {
+            using (var rk = Registry.CurrentUser.OpenSubKey(UninstallKey))
+                return rk != null;
+        }
+
+        private static string UninstallKey
+        {
+            get { return "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + UninstallKeyName; }
+        }
+
+        // The removal path Settings launches. Prefer the uninstaller copy that
+        // RegisterInPrograms drops beside the app; that copy survives the user
+        // deleting the installer they downloaded. The running installer is the
+        // fallback, used when the copy is not there yet (or was removed by hand).
+        private static string UninstallCommand(string installDir)
+        {
+            string beside = Path.Combine(installDir, UninstallerName);
+            string exe = File.Exists(beside) ? beside : Assembly.GetExecutingAssembly().Location;
+            if (string.IsNullOrEmpty(exe))
+                exe = Process.GetCurrentProcess().MainModule.FileName;
+            return "\"" + exe + "\" --uninstall";
+        }
+
+        // Drops a copy of this installer beside the app so Settings can always
+        // reach an uninstaller. It is re-copied on every install and repair, so a
+        // newer installer replaces an older copy and the icon stays current.
+        public static string DropUninstaller(string installDir)
+        {
+            try
+            {
+                string src = Assembly.GetExecutingAssembly().Location;
+                if (string.IsNullOrEmpty(src))
+                    src = Process.GetCurrentProcess().MainModule.FileName;
+                string dst = Path.Combine(installDir, UninstallerName);
+                File.Copy(src, dst, true);
+                return dst;
+            }
+            catch
+            {
+                // Read-only install location, antivirus, whatever: the ARP entry
+                // falls back to the running installer, which is the pre-repair
+                // behaviour, so nothing regresses.
+                return Path.Combine(installDir, UninstallerName);
+            }
+        }
+
+        // Writes a batch file to TEMP that waits for this process to exit, then
+        // removes the install directory and deletes itself. This is the standard
+        // trick for an uninstaller that lives inside the folder it is removing:
+        // Windows holds the exe open while it runs, so the last delete has to
+        // happen after this process is gone.
+        private static void ScheduleSelfDelete(string installDir)
+        {
+            try
+            {
+                string tempBat = Path.Combine(Path.GetTempPath(), "wt-rtl-cleanup.cmd");
+                // %~dp0 is the batch file's own directory, so it can delete itself.
+                // The loop waits for the uninstaller's file lock to clear.
+                string batch =
+                    "@echo off\r\n" +
+                    ":wait\r\n" +
+                    "  timeout /t 1 /nobreak >nul\r\n" +
+                    "  del /f /q \"" + Path.Combine(installDir, UninstallerName) + "\" 2>nul\r\n" +
+                    "  if exist \"" + Path.Combine(installDir, UninstallerName) + "\" goto wait\r\n" +
+                    "  rd /s /q \"" + installDir + "\" 2>nul\r\n" +
+                    "  del /f /q \"%~f0\" 2>nul\r\n";
+                File.WriteAllText(tempBat, batch, Encoding.ASCII);
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/c \"" + tempBat + "\"",
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                };
+                Process.Start(psi);
+            }
+            catch
+            {
+                // Fallback: try the direct delete; it may succeed if the AV or the
+                // OS already released the file, and a leftover empty folder is not
+                // worth failing an uninstall over.
+                TryDelete(installDir);
+            }
+        }
+
+        public const string UninstallerName = "uninstall.exe";
+
+        private static int EstimatedSizeKb(string installDir)
+        {
+            try
+            {
+                long bytes = 0;
+                foreach (var f in new DirectoryInfo(installDir).EnumerateFiles("*", SearchOption.AllDirectories))
+                    bytes += f.Length;
+                return (int)Math.Min(bytes / 1024, int.MaxValue);
+            }
+            catch { return 0; }
         }
 
         // --------------------------------------------------------- network

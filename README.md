@@ -36,7 +36,11 @@ Download the build for your architecture and unzip it anywhere.
   The wizard is English by default and switches to Persian when your Windows
   display language is Persian; the language button in the header corner switches
   between the two at any point. No admin rights, and the Store terminal is
-  untouched. Run it again with `--uninstall` to remove it.
+  untouched. The install registers itself in *Add or remove programs*, so it can
+  be removed from Settings. Running the installer again over an existing install
+  offers **Repair**, which recreates the shortcuts and the *Add or remove
+  programs* entry without re-downloading, and **Uninstall**. Command line:
+  `--uninstall` removes, `--repair` rebuilds the shortcuts.
 - **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
   and nothing outside that folder is touched.
 - **One file, not even a zip:** run `WindowsTerminal-RTL-Portable-x64.exe` (or
@@ -59,6 +63,15 @@ executable *before* it asks the system for a typeface, so it still renders its
 text on a machine that has no fonts installed at all. Nothing is registered for
 that and no admin rights are needed. This is what makes the portable build, and
 the single-file EXE above, independent of the machine they land on.
+
+That is also what makes Persian and Arabic work out of the box. Both bundled
+fonts cover every one of the 45 core Persian/Arabic letters through their cmap
+tables, and both carry a real GSUB table with the Arabic shaping features
+(`ccmp`, `init`, `medi`, `fina`, `rlig`) under the `arab` script. DirectWrite
+applies those features because the renderer runs the text through
+`AnalyzeScript` first, and the script analysis that call returns for Arabic is
+what turns positional shaping on; shaping does not depend on anything the
+machine happens to have installed.
 
 **System requirements:** Windows 10 version 2004 (build 19041) or later, the same
 floor as the upstream portable distribution. Windows Server 2019 is build 17763
@@ -167,7 +180,7 @@ their output is attached to the workflow run as build artifacts:
 | `probe-para-dir` | How a row's paragraph direction is decided. Prints the resolved levels and the final visual order for a prompt followed by Persian under both P2/P3, which looks at the first strong character, and the older rule that any strong RTL letter is decisive, so the difference is visible. |
 | `probe-glyph-order` | Whether DirectWrite returns the glyphs of an RTL run in logical or visual order. This decides whether rule L2 has to reverse the clusters. |
 | `probe-glyph-direction` | Whether DirectWrite reverses them anyway when asked for left to right. |
-| `probe-lamalef` | Which installed fonts fuse lam-alef, the mandatory ligature in Arabic script. On this machine: none of them, 0 of 22. |
+| `probe-lamalef-real` | Which installed fonts fuse lam-alef, the ligature Arabic script requires. Answer: 16 of the 22 families that carry Arabic. The earlier "0 of 22" result was an artifact of hand-setting `DWRITE_SCRIPT_SHAPES_DEFAULT`, which suppresses shaping; `AnalyzeScript` returns a different shape value for Arabic and that is what makes DirectWrite apply GSUB. The bundled Cascadia fonts shape positionally but do not fuse lam-alef, which is a property of that font, not of the pipeline. |
 | `probe-font-fit` | Which font fits a terminal's cell grid. A terminal forces every shaped cluster to exactly one cell, so a font whose Arabic glyphs are narrower than the cell gets stretched, and that is what reads as a gap between letters. |
 
 They need no Windows Terminal to build:
@@ -258,12 +271,14 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 فایل zip را هرجا باز کنید.
 
-- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. با `--uninstall` هم حذف می‌شود.
+- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. نصب خودش را در *Add or remove programs* ثبت می‌کند، پس از همان تنظیمات هم قابل حذف است. اگر نصب‌کننده را دوباره روی نصبی که از قبل وجود دارد اجرا کنید، دو گزینه پیش شماست: **تعمیر** که میانبرها و ثبت *Add or remove programs* را بدون دانلود دوباره می‌سازد، و **حذف نصب**. از خط فرمان هم `--uninstall` حذف می‌کند و `--repair` میانبرها را بازسازی می‌کند.
 - **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
 - **یک فایل، حتی بدون zip:** `WindowsTerminal-RTL-Portable-x64.exe` (یا نسخهٔ `arm64`) را از هرجا که گذاشته‌اید اجرا کنید. کل بیلد داخل همان یک فایل است. اولین اجرا آن را در `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` باز می‌کند و ترمینال را بالا می‌آورد، و اجراهای بعدی فوری هستند، چون محتوا از قبل روی دیسک است و نشانگر هنوز با آن مطابقت دارد. چیزی ثبت نمی‌شود و دسترسی مدیر خواسته نمی‌شود. یک ریلیز جدید پوشهٔ نسخهٔ قبلی را جایگزین می‌کند، پس دو نسخه هرگز با هم قاطی نمی‌شوند.
 - **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
 
 بیلد فونت‌های خودش را همراه دارد. `CascadiaCode.ttf` و `CascadiaMono.ttf` کنار `WindowsTerminal.exe` قرار دارند و ترمینال هر `.ttf` که کنار فایل اجرایی خودش باشد را *قبل از* درخواست فونت از سیستم بارگذاری می‌کند، بنابراین روی سیستمی که اصلاً فونتی نصب نیست هم متن خود را نشان می‌دهد. هیچ فونتی ثبت نمی‌شود و دسترسی مدیر هم لازم نیست. همین چیزی است که بیلد پورتابل و فایل تک‌فایلهٔ بالا را مستقل از سیستمی می‌کند که رویش اجرا می‌شوند.
+
+همین فونت‌هاست که فارسی و عربی را بدون هیچ پیش‌نیازی کار می‌کند. هر دو فونتِ همراه هر ۴۵ حرف اصلی فارسی/عربی را از طریق جدول cmap پوشش می‌دهند و هر دو یک جدول واقعی GSUB با ویژگی‌های شکل‌دهی عربی (`ccmp`، `init`، `medi`، `fina`، `rlig`) برای اسکریپت `arab` دارند. شکل‌دهی، و در نتیجهٔ آن شکل‌های متصل که این خط لازم دارد، به چیزی که روی سیستمی نصب شده بستگی ندارد. DirectWrite این ویژگی‌ها را اعمال می‌کند چون رندرر اول متن را از `AnalyzeScript` عبور می‌دهد، و تحلیلی که این فراخوانی برای عربی برمی‌گرداند چیزی است که شکل‌دهی موقعیتی را روشن می‌کند.
 
 **پیش‌نیاز سیستم:** ویندوز ۱۰ نسخهٔ ۲۰۰۴ (بیلد ۱۹۰۴۱) یا جدیدتر، همان حدی که توزیع پورتابل بالادست لازم دارد. Windows Server 2019 بیلد ۱۷۷۶۳ است و پایین‌تر از این حد است، پس ترمینال روی آن اجرا نمی‌شود و نصب‌کننده همین را به شما می‌گوید، به جای اینکه نسخه‌ای را نصب کند که باز نمی‌شود. Windows Server 2022 (بیلد ۲۰۳۴۸) و جدیدتر پشتیبانی می‌شوند.
 
@@ -303,7 +318,7 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 دو نکته که با اندازه‌گیری ثابت شده و ممکن است انتظارش را نداشته باشید:
 
-- **هیچ فونت نصب‌شده‌ای لام‌الف را یکی نمی‌کند** (۰ از ۲۲ فونت عربی‌دار). لام‌الف در تایپوگرافی فارسی و عربی یک لیگاتور اجباری است، ولی فونت‌های موجود این سیستم آن را ندارند.
+- **لام‌الف در فونت‌های همراه ترکیب نمی‌شود**. ۱۶ تا از ۲۲ خانوادهٔ فونتِ عربی‌دارِ این سیستم لام‌الف را در یک گلیف ترکیب می‌کنند، ولی فونت‌های Cascadia که همراه بیلد می‌آیند این‌گونه نیستند. این ویژگیِ خودِ آن فونت است، نه خط لولهٔ شکل‌دهی: فونت‌های همراه شکل‌دهی موقعیتی را درست انجام می‌دهند (شکلِ هر حرف به جایگاهش در کلمه بستگی دارد) ولی lookup مربوط به لیگاتور لام‌الف را ندارند.
 - **فاصلهٔ بین حروف به عرض سلول بستگی دارد.** ترمینال هر cluster را دقیقاً روی یک سلول می‌کشد، پس فونتی که گلیف‌های عربی‌اش باریک‌تر از سلول باشد کشیده می‌شود. نسبت گلیف عربی به سلول بین ۰.۵۹ تا ۱.۲۱ varies است؛ `Vazir Code Hack` با ۱.۰۳ نزدیک‌ترین گزینهٔ نصب‌شده است.
 
 ### ساخت از سورس

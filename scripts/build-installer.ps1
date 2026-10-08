@@ -39,7 +39,7 @@ $source  = @(
     (Join-Path $repoRoot 'installer\WizardForm.cs'),
     (Join-Path $repoRoot 'installer\Properties\AssemblyInfo.cs')
 )
-$icon    = Join-Path $repoRoot 'assets\terminal-rtl.ico'
+$icon    = Join-Path $repoRoot 'assets\installer-rtl.ico'
 
 foreach ($f in (@($source) + @($icon))) {
     if (-not (Test-Path -LiteralPath $f)) { throw "missing input: $f" }
@@ -109,7 +109,7 @@ foreach ($r in $extraRefs) {
 $manifestArg = "/win32manifest:" + (Join-Path $repoRoot 'installer\app.manifest')
 $outArg      = "/out:" + $out
 $iconArg     = "/win32icon:" + $icon
-$iconResArg  = "/resource:" + $icon + ",terminal-rtl.ico"
+$iconResArg  = "/resource:" + $icon + ",installer-rtl.ico"
 
 $cscArgs = @(
     '/nologo', '/target:winexe', '/platform:anycpu',

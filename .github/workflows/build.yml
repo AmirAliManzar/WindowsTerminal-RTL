@@ -68,8 +68,8 @@ jobs:
         run: |
           mkdir artifacts
           cd tools\bidi-probe
-          for %%P in (probe-rtl-layout probe-para-dir probe-glyph-order probe-lamalef probe-font-fit probe-glyph-direction) do (
-            cl /nologo /EHsc /std:c++20 %%P.cpp /Fe:%%P.exe /link dwrite.lib || exit /b 1
+          for %%P in (probe-rtl-layout probe-para-dir probe-glyph-order probe-font-fit probe-glyph-direction probe-real-shaping-chain probe-lamalef-real probe-gsub-control) do (
+            cl /nologo /EHsc /std:c++20 %%P.cpp /Fe:%%P.exe /link dwrite.lib ole32.lib || exit /b 1
             echo ### %%P >> ..\..\artifacts\probes-%%P.txt
             %%P.exe >> ..\..\artifacts\probes-%%P.txt 2>&1
           )
@@ -81,6 +81,20 @@ jobs:
           & powershell -ExecutionPolicy Bypass -File scripts\build-portable.ps1 `
               -Arch ${{ matrix.arch }} `
               -OutDir "${{ github.workspace }}\packaged"
+
+      # The decisive self-sufficiency check: with the bundled .ttf files added
+      # to the font set first and the system set last (the way FontCache.h
+      # builds it), does a request for "Cascadia Code" resolve to the bundled
+      # font and not to an installed one that may lack Arabic?
+      - name: Verify the bundled fonts win over system fonts
+        shell: cmd
+        run: |
+          cd tools\bidi-probe
+          cl /nologo /EHsc /std:c++20 probe-nearby-wins.cpp /Fe:probe-nearby-wins.exe /link dwrite.lib ole32.lib || exit /b 1
+          echo ### probe-nearby-wins >> ..\..\artifacts\probes-nearby-wins.txt
+          for %%F in ("%GITHUB_WORKSPACE%\packaged\WindowsTerminal-RTL-${{ matrix.arch }}\CascadiaCode.ttf" "%GITHUB_WORKSPACE%\packaged\WindowsTerminal-RTL-${{ matrix.arch }}\CascadiaMono.ttf") do (
+            probe-nearby-wins.exe %%F >> ..\..\artifacts\probes-nearby-wins.txt 2>&1
+          )
 
       # Record the Windows Terminal build these DLLs came from, so the
       # README and the release can talk about a specific version.

@@ -225,6 +225,12 @@ namespace WindowsTerminalRtlInstaller
                     return 0;
                 }
 
+                if (opts.Repair)
+                {
+                    job.Repair(opts.InstallDir);
+                    return 0;
+                }
+
                 // Already installed? Report and step aside, so a second run is
                 // a no-op rather than a surprise reinstall.
                 if (!opts.Force && string.IsNullOrEmpty(opts.InstallDir))
@@ -292,6 +298,7 @@ namespace WindowsTerminalRtlInstaller
             public bool Help;
             public bool ShowVersion;
             public bool Uninstall;
+            public bool Repair;
             public bool Force;
             public bool NoDesktopShortcut;
             public string InstallDir;
@@ -317,6 +324,9 @@ namespace WindowsTerminalRtlInstaller
                         break;
                     case "--uninstall":
                         o.Uninstall = true;
+                        break;
+                    case "--repair":
+                        o.Repair = true;
                         break;
                     case "--force":
                     case "-force":
@@ -369,6 +379,8 @@ namespace WindowsTerminalRtlInstaller
             Console.WriteLine("  WindowsTerminal-RTL-Installer.exe              install the latest build (wizard)");
             Console.WriteLine("  WindowsTerminal-RTL-Installer.exe --force      re-download and reinstall");
             Console.WriteLine("  WindowsTerminal-RTL-Installer.exe --uninstall  remove this install");
+            Console.WriteLine("  WindowsTerminal-RTL-Installer.exe --repair     recreate the shortcuts and");
+            Console.WriteLine("                           the Add or remove programs entry");
             Console.WriteLine();
             Console.WriteLine("  --arch x64|arm64         pick the build to install (default: this machine's)");
             Console.WriteLine("  --install-dir <path>     install somewhere other than");
