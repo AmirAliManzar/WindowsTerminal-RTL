@@ -19,7 +19,9 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Text;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
@@ -270,6 +272,10 @@ namespace WindowsTerminalRtlInstaller
 
                 CreateShortcuts(destExe, installDir, opts.StartMenuShortcut, opts.DesktopShortcut);
                 RegisterInPrograms(installDir, destExe);
+
+                // A replaced exe keeps its old icon in the shell's caches, and
+                // the taskbar and Start menu would go on showing the stale one.
+                ClearIconCaches();
 
                 Step("done. Search the Start menu for \"" + AppName + "\".");
                 Step("Your settings carry over automatically:");
@@ -780,6 +786,141 @@ namespace WindowsTerminalRtlInstaller
         }
 
         // ------------------------------------------------------------ utils
+
+        // Windows caches the icon of every exe it has ever shown in the taskbar,
+        // the Start menu and File Explorer. When the icon changes, the old one
+        // can outlive the file it came from for days, which is exactly why a
+        // taskbar icon looks wrong right after an update. The reliable fix is to
+        // stop Explorer (it holds these files open and silently rewrites them on
+        // exit), delete every cache file, and let Explorer start again. This is
+        // the same procedure the well-known "rebuild icon cache" guides describe.
+        //
+        // Nothing here is fatal: every step is best effort, so a machine where
+        // the caches are locked or missing still ends up with a working install.
+        private void ClearIconCaches()
+        {
+            try
+            {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string explorerCacheDir = Path.Combine(localAppData, "Microsoft", "Windows", "Explorer");
+
+                int deleted = 0;
+
+                // The legacy single-file cache, still read on every modern build.
+                string iconCacheDb = Path.Combine(localAppData, "IconCache.db");
+
+                // The per-size split caches, plus the index that maps file paths
+                // to entries. iconcache_idx.db in particular is what keeps a
+                // shortcut pinned to a stale bitmap.
+                List<string> patterns = new List<string> { "iconcache_*.db", "thumbcache_*.db" };
+
+                // Stop Explorer so the caches are not open. /f because Explorer
+                // does not ask permission, and the process name is matched with
+                // the trailing dot so a hypothetical "explorerx.exe" is spared.
+                Step("restarting Explorer to release the icon cache");
+                KillExplorer();
+                try
+                {
+                    TryDelete(iconCacheDb);
+                    deleted++;
+
+                    if (Directory.Exists(explorerCacheDir))
+                    {
+                        foreach (string pattern in patterns)
+                        {
+                            foreach (string file in Directory.EnumerateFiles(explorerCacheDir, pattern))
+                            {
+                                TryDelete(file);
+                                deleted++;
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    // Explorer has to come back, otherwise the user is left with
+                    // no taskbar, no Start menu and no desktop.
+                    StartExplorer();
+                }
+
+                // Tell the shell that what it knew about file associations and
+                // icons is worthless now, so it re-reads the exe it just cached a
+                // bitmap from minutes ago. Without this Explorer sometimes keeps
+                // rendering from memory and only picks up the new icon after a
+                // logoff.
+                NotifyShellChange();
+
+                Step("cleared " + deleted + " icon cache file(s)");
+            }
+            catch (Exception ex)
+            {
+                // A cache that cannot be cleared is not a failed install: the new
+                // exe and its icon are already on disk, and the stale entry ages
+                // out on its own. Report it, do not roll anything back.
+                Step("could not clear the icon cache (" + ex.GetType().Name + ": " + ex.Message + ")");
+            }
+        }
+
+        private static void KillExplorer()
+        {
+            // taskkill returns a non-zero exit code when there is nothing to
+            // kill, which is not an error here.
+            var psi = new ProcessStartInfo
+            {
+                FileName = "taskkill.exe",
+                Arguments = "/f /im explorer.exe",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+            };
+            try
+            {
+                Process.Start(psi).WaitForExit(6000);
+            }
+            catch
+            {
+                // Explorer may already be gone; the StartExplorer below is what
+                // actually matters.
+            }
+            // Explorer keeps a handle on the cache files until it is really gone.
+            Thread.Sleep(900);
+        }
+
+        private static void StartExplorer()
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Normal,
+                });
+            }
+            catch
+            {
+                // If Explorer cannot be re-launched, Windows restarts it on the
+                // next logon, and nothing in this install depends on it running.
+            }
+        }
+
+        private static void NotifyShellChange()
+        {
+            try
+            {
+                // SHCNE_ASSOCCHANGED (0x08000000) with SHCNF_IDLIST (0): the
+                // whole file-association and icon set changed. This is the same
+                // broadcast a file-type change in the registry triggers.
+                SHChangeNotify(0x08000000, 0x0000, IntPtr.Zero, IntPtr.Zero);
+            }
+            catch
+            {
+                // A missing shell32 export is not a reason to fail an install.
+            }
+        }
+
+        [DllImport("shell32.dll", SetLastError = true, CharSet = CharSet.Unicode, CallingConvention = CallingConvention.StdCall)]
+        private static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
 
         private static void TryDelete(string path)
         {
