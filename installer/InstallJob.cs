@@ -320,6 +320,12 @@ namespace WindowsTerminalRtlInstaller
                 }
             }
 
+            // The shortcuts are gone, but the shell keeps their icons and the
+            // taskbar keeps its pinned tile looking alive. Drop the caches so the
+            // app disappears from the Start menu and taskbar instead of turning
+            // into a dead, un-clickable leftover.
+            ClearIconCaches();
+
             if (Directory.Exists(installDir))
             {
                 // If this uninstaller is running from inside installDir, it holds a
@@ -388,6 +394,11 @@ namespace WindowsTerminalRtlInstaller
             Step("recreated the Start menu and desktop shortcuts");
             Step("recreated the Add or remove programs entry" +
                  (string.IsNullOrEmpty(payloadVersion) ? "" : " (version " + payloadVersion + ")"));
+
+            // The rebuilt shortcuts point at the same exe, but the shell may have
+            // cached the old icon from before whatever made the entry need repair.
+            ClearIconCaches();
+
             Step("done. Your settings were left untouched.");
         }
 
