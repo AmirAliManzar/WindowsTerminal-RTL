@@ -1,0 +1,12 @@
+diff --git a/src/host/settings.cpp b/src/host/settings.cpp
+--- a/src/host/settings.cpp
++++ b/src/host/settings.cpp
+@@ -38,7 +38,7 @@
+     _uNumberOfHistoryBuffers(DEFAULT_NUMBER_OF_BUFFERS),
+     _bHistoryNoDup(false),
+     // ColorTable initialized below
+-    _uCodePage(ServiceLocator::LocateGlobals().uiOEMCP),
++    _uCodePage(CP_UTF8), // always UTF-8, never the locale's OEM codepage, so non-Latin text survives
+     _uScrollScale(1),
+     _bLineSelection(true),
+     _bWrapText(true),

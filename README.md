@@ -75,6 +75,22 @@ applies those features because the renderer runs the text through
 what turns positional shaping on; shaping does not depend on anything the
 machine happens to have installed.
 
+**The console codepage.** Drawing the glyphs is only half of it; the text has to
+reach the console intact first. A program writing through the byte-oriented
+console API encodes its text to the console's codepage before it writes, and
+upstream seeds that codepage from the machine's OEM codepage. On a machine whose
+locale is not Arabic, Persian is not representable in that codepage, so every
+letter becomes a literal `?`. That is the `????` you see on a Windows install
+with no Persian language support, and it is a conversion failure rather than a
+missing glyph.
+
+This build defaults the console to UTF-8 (codepage 65001) instead, so the
+round-trip holds on any machine regardless of its locale. The honest tradeoff: a
+program that deliberately writes bytes in the legacy OEM codepage, a batch file
+saved in the ANSI codepage for instance, will have those bytes read as UTF-8.
+Anything that writes UTF-8, the modern default, works, and a program that wants
+its old codepage back can still call `SetConsoleOutputCP`.
+
 **System requirements:** Windows 10 version 2004 (build 19041) or later, the same
 floor as the upstream portable distribution. Windows Server 2019 is build 17763
 and is below it, so the terminal cannot run there and the installer says so
@@ -130,7 +146,19 @@ Five files, all in the Atlas renderer:
   Unicode rules P2/P3: it is right-to-left when the row's *first* strong
   character is right-to-left.
 
-The complete patch is at:
+The renderer is only half the story, so there is a second patch:
+
+```text
+patch/utf8-console-codepage.patch
+```
+
+It changes one line in `src/host/settings.cpp`. Upstream defaults the console's
+codepage to the machine's OEM codepage; this build defaults it to UTF-8, so a
+program encoding Persian to the console codepage does not turn every letter into
+a `?` on a machine whose locale is not Arabic. The Atlas renderer and the console
+host are separate, so the two patches touch no file in common.
+
+The complete RTL patch is at:
 
 ```text
 patch/windowsterminal-rtl.patch
@@ -282,6 +310,10 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 همین فونت‌هاست که فارسی و عربی را بدون هیچ پیش‌نیازی کار می‌کند. هر دو فونتِ همراه هر ۴۵ حرف اصلی فارسی/عربی را از طریق جدول cmap پوشش می‌دهند و هر دو یک جدول واقعی GSUB با ویژگی‌های شکل‌دهی عربی (`ccmp`، `init`، `medi`، `fina`، `rlig`) برای اسکریپت `arab` دارند. شکل‌دهی، و در نتیجهٔ آن شکل‌های متصل که این خط لازم دارد، به چیزی که روی سیستمی نصب شده بستگی ندارد. DirectWrite این ویژگی‌ها را اعمال می‌کند چون رندرر اول متن را از `AnalyzeScript` عبور می‌دهد، و تحلیلی که این فراخوانی برای عربی برمی‌گرداند چیزی است که شکل‌دهی موقعیتی را روشن می‌کند.
 
+**کدپیج کنسول.** رسم گلیف‌ها نیمی ماجراست؛ متن باید اول سالم وارد کنسول شود. برنامه‌ای که از API بایتی کنسول می‌نویسد اول متنش را به کدپیج کنسول رمزگذاری می‌کند و بعد می‌نویسد، و بالادست این کدپیج را از کدپیج OEM همان ماشین می‌گیرد. روی سیستمی که locale آن عربی نیست، فارسی در آن کدپیج جایی ندارد، پس هر حرف به یک `?` واقعی تبدیل می‌شود. همین `????` است که روی یک ویندوز بدون پشتیبانی زبان فارسی می‌بینید، و این شکستِ تبدیل است، نه کمبود گلیف.
+
+این بیلد به جای آن کنسول را روی UTF-8 (کدپیج ۶۵۰۰۱) پیش‌فرض می‌کند، پس این رفت‌وبرگشت روی هر سیستمی و فارق از locale آن کار می‌کند. بده‌بستان صادقانه‌اش: برنامه‌ای که عمداً بایت‌ها را به کدپیج قدیمی OEM می‌نویسد، مثلاً یک فایل batch با رمزگذاری ANSI، از این پس آن بایت‌ها به‌عنوان UTF-8 خوانده می‌شوند. هر چیزی که UTF-8 می‌نویسد، که پیش‌فرض مدرن است، کار می‌کند، و برنامه‌ای که کدپیج قدیمی‌اش را می‌خواهد هنوز هم می‌تواند `SetConsoleOutputCP` صدا بزند.
+
 **پیش‌نیاز سیستم:** ویندوز ۱۰ نسخهٔ ۲۰۰۴ (بیلد ۱۹۰۴۱) یا جدیدتر، همان حدی که توزیع پورتابل بالادست لازم دارد. Windows Server 2019 بیلد ۱۷۷۶۳ است و پایین‌تر از این حد است، پس ترمینال روی آن اجرا نمی‌شود و نصب‌کننده همین را به شما می‌گوید، به جای اینکه نسخه‌ای را نصب کند که باز نمی‌شود. Windows Server 2022 (بیلد ۲۰۳۴۸) و جدیدتر پشتیبانی می‌شوند.
 
 ### اصلاح نسخهٔ نصب‌شده و چرا ممکن نیست
@@ -311,6 +343,14 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 سطرهایی که هیچ متن راست‌به‌چپ ندارند دست‌نخورده می‌مانند، پس متن انگلیسی و عدد دقیقاً مثل قبل رسم می‌شود.
 
 آینه‌کردن پرانتز و شکل‌دهی اعداد (L3/L4) هنوز پیاده نشده‌اند، پس محتوای ترکیبی مثل `ABC سلام 123` ممکن است جای عددها جابه‌جا نشان داده شود.
+
+رندرر تنها نیمی از ماجراست، برای همین یک پچ دوم هم هست:
+
+```text
+patch/utf8-console-codepage.patch
+```
+
+یک خط در `src/host/settings.cpp` را تغییر می‌دهد. بالادست کدپیج کنسول را از کدپیج OEM همان ماشین می‌گیرد؛ این بیلد آن را UTF-8 می‌گیرد، تا برنامه‌ای که فارسی را به کدپیج کنسول رمزگذاری می‌کند روی سیستمی که locale عربی ندارد هر حرف را به `?` تبدیل نکند. رندرر Atlas و کنسول هاست از هم جدایند، پس این دو پچ هیچ فایل مشترکی ندارند.
 
 پچ کامل در `patch/windowsterminal-rtl.patch` و نسخهٔ خوانای فایل‌های تغییرکرده در `patch/` است.
 

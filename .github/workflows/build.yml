@@ -203,6 +203,7 @@ jobs:
           # The patch itself, for anyone who wants to build from upstream.
           cp -f patch/windowsterminal-rtl.patch release-assets/
           cp -f patch/build-unpackaged.patch release-assets/
+          cp -f patch/utf8-console-codepage.patch release-assets/
           cp -f UPSTREAM_REF release-assets/
 
           # The installer EXE, built on the x64 leg. The one entry point most

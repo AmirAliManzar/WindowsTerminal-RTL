@@ -75,6 +75,16 @@ Write-Host "[build] applying the unpackaged build patch"
 & git -C $src apply --whitespace=nowarn (Join-Path $here 'patch\build-unpackaged.patch')
 if ($LASTEXITCODE -ne 0) { throw 'build-unpackaged.patch did not apply cleanly' }
 
+# The console codepage. Upstream seeds it from the system's OEM codepage, so on
+# a machine whose locale is not Arabic a program that encodes Persian to the
+# console codepage before writing turns every letter into '?'. Defaulting the
+# console to UTF-8 makes that round-trip regardless of the system locale, which
+# is the point of this build. Applied last because it touches the console host,
+# which neither of the other patches goes near.
+Write-Host "[build] applying the UTF-8 console codepage patch"
+& git -C $src apply --whitespace=nowarn (Join-Path $here 'patch\utf8-console-codepage.patch')
+if ($LASTEXITCODE -ne 0) { throw 'utf8-console-codepage.patch did not apply cleanly' }
+
 # Files this repository adds on top of the patch: the solution filter, the probes
 # and the packager. They are not part of the diff because they are new files, and
 # a patch file cannot carry "this file did not exist upstream" for something we
