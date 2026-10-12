@@ -1,162 +1,71 @@
 # Windows Terminal RTL
 
-A patch that fixes right-to-left text rendering in [Windows Terminal](https://github.com/microsoft/terminal).
+A Windows patch that fixes right-to-left text rendering in [Windows Terminal](https://github.com/microsoft/terminal).
 
-On Windows, Windows Terminal has problems rendering Persian, Arabic and Hebrew. Words appear in the wrong order, letters can come apart, and the caret can land in the wrong cell.
+On Windows, Windows Terminal has problems rendering Persian, Arabic and Hebrew text. Words may appear in the wrong order, letters may come apart, and the caret may land in the wrong cell.
 
-This patch fixes the problem at the text-shaping layer, in the Atlas renderer, so it applies everywhere Windows Terminal draws text: the tab bar, the settings UI, and anything running inside the terminal - shells, `claude code`, `opencode`, editors over SSH.
+This patch fixes the problem at the text-shaping layer, in the Atlas renderer, so it applies everywhere Windows Terminal draws text: the tab bar, the settings UI, and anything running inside the terminal, including shells, `claude code`, `opencode` and editors over SSH.
 
 ## Downloads
 
-Prebuilt files are on the [Releases](../../releases) page:
+Prebuilt files are available on the [Releases](../../releases) page:
 
-- `WindowsTerminal-RTL-Installer.exe` the installer, one file that downloads
-  and installs the right build for you
-- `WindowsTerminal-RTL-Portable-x64.exe` the whole x64 build as a single file,
-  no installer and no unzip: run it anywhere
-- `WindowsTerminal-RTL-Portable-arm64.exe` the same for Windows on ARM
-- `WindowsTerminal-RTL-x64.zip` portable build for 64-bit Intel/AMD
-- `WindowsTerminal-RTL-arm64.zip` portable build for Windows on ARM
-- `windowsterminal-rtl.patch` the RTL patch, for building Windows Terminal yourself
-- `build-unpackaged.patch` the build changes needed to produce an unpackaged build
+- `WindowsTerminal-RTL-Installer.exe` The installer: one file that downloads and installs the right build for you
+- `WindowsTerminal-RTL-Portable-x64.exe` The whole x64 build as a single file, with no installer and no unzip
+- `WindowsTerminal-RTL-Portable-arm64.exe` The same for Windows on ARM
+- `WindowsTerminal-RTL-x64.zip` Portable build for 64-bit Intel/AMD systems
+- `WindowsTerminal-RTL-arm64.zip` Portable build for Windows on ARM
+- `windowsterminal-rtl.patch` The RTL patch, for building Windows Terminal yourself
+- `build-unpackaged.patch` The build changes needed to produce an unpackaged build
+- `utf8-console-codepage.patch` The console codepage fix, so Persian survives the byte path on any locale
 
-The portable build needs no installation. It reads your existing Windows Terminal
-configuration, so your profiles, themes, colour schemes and fonts carry over:
+The portable builds do not require installation or administrator access. They read your existing Windows Terminal configuration, so your profiles, themes, colour schemes and fonts carry over:
 
 ```text
 %LOCALAPPDATA%\Microsoft\Windows Terminal
 ```
 
-Download the build for your architecture and unzip it anywhere.
+Download the build that matches your system and unzip it anywhere.
 
-- **Installer:** grab `WindowsTerminal-RTL-Installer.exe` from the Releases page
-  and double-click it. It opens a short wizard: pick the architecture, pick the
-  install folder, choose whether to add Start menu and desktop shortcuts, and it
-  downloads the matching build, verifies it against its sha256 and installs it.
-  The wizard is English by default and switches to Persian when your Windows
-  display language is Persian; the language button in the header corner switches
-  between the two at any point. No admin rights, and the Store terminal is
-  untouched. The install registers itself in *Add or remove programs*, so it can
-  be removed from Settings. Running the installer again over an existing install
-  offers **Update** when the installed build is older than the installer, which
-  downloads the latest release and replaces the build in place; **Repair**, which
-  recreates the shortcuts and the *Add or remove programs* entry without
-  re-downloading; and **Uninstall**. Command line: `--uninstall` removes,
-  `--repair` rebuilds the shortcuts.
-- **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed
-  and nothing outside that folder is touched.
-- **One file, not even a zip:** run `WindowsTerminal-RTL-Portable-x64.exe` (or
-  the `arm64` one) from wherever you put it. The whole build is inside that one
-  file. The first run unpacks it into
-  `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` and starts the terminal,
-  and every run after that is instant, because the payload is already on disk and
-  the marker still matches. Nothing is registered and no admin rights are asked
-  for. A new release replaces the previous folder, so two versions never mix.
-- **With a Start menu entry:** the zip also carries `install.ps1`. Right-click
-  it → *Run with PowerShell*. It copies the build to
-  `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL`, creates a Start menu shortcut
-  (and a desktop one), and needs no admin rights. Run
-  `install.ps1 -Uninstall` to remove it. Your settings are never touched either
-  way, because a portable build reads the unpackaged settings path above.
+- **Installer:** grab `WindowsTerminal-RTL-Installer.exe` from the Releases page and double-click it. It opens a short wizard: pick the architecture, pick the install folder, choose whether to add Start menu and desktop shortcuts, and it downloads the matching build, verifies it against its sha256 and installs it. The wizard is English by default and switches to Persian when your Windows display language is Persian. The language button in the header corner switches between the two at any point. No admin rights are needed, and the Store terminal is untouched. The install registers itself in *Add or remove programs*, so it can be removed from Settings. Running the installer again over an existing install offers three options: **Update**, when the installed build is older than the installer, which downloads the latest release and replaces the build in place; **Repair**, which recreates the shortcuts and the *Add or remove programs* entry without re-downloading; and **Uninstall**. From the command line, `--uninstall` removes and `--repair` rebuilds the shortcuts.
+- **No install:** run `WindowsTerminal.exe` from the zip. Nothing is installed and nothing outside that folder is touched.
+- **One file, not even a zip:** run `WindowsTerminal-RTL-Portable-x64.exe` (or the `arm64` one) from wherever you put it. The whole build is inside that one file. The first run unpacks it into `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` and starts the terminal. Every run after that is instant, because the payload is already on disk and the marker still matches. Nothing is registered and no admin rights are asked for. A new release replaces the previous folder, so two versions never mix.
+- **With a Start menu entry:** the zip also carries `install.ps1`. Right-click it and choose *Run with PowerShell*. It copies the build to `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL`, creates a Start menu shortcut and a desktop one, and needs no admin rights. Run `install.ps1 -Uninstall` to remove it. Your settings are never touched, because a portable build reads the unpackaged settings path above.
 
-The build carries its own fonts. `CascadiaCode.ttf` and `CascadiaMono.ttf` sit
-next to `WindowsTerminal.exe`, and the terminal loads any `.ttf` beside its own
-executable *before* it asks the system for a typeface, so it still renders its
-text on a machine that has no fonts installed at all. Nothing is registered for
-that and no admin rights are needed. This is what makes the portable build, and
-the single-file EXE above, independent of the machine they land on.
+## Fonts and the console codepage
 
-That is also what makes Persian and Arabic work out of the box. Both bundled
-fonts cover every one of the 45 core Persian/Arabic letters through their cmap
-tables, and both carry a real GSUB table with the Arabic shaping features
-(`ccmp`, `init`, `medi`, `fina`, `rlig`) under the `arab` script. DirectWrite
-applies those features because the renderer runs the text through
-`AnalyzeScript` first, and the script analysis that call returns for Arabic is
-what turns positional shaping on; shaping does not depend on anything the
-machine happens to have installed.
+The build carries its own fonts. `CascadiaCode.ttf` and `CascadiaMono.ttf` sit next to `WindowsTerminal.exe`, and the terminal loads any `.ttf` beside its own executable before it asks the system for a typeface. It therefore renders its text on a machine that has no fonts installed at all. Nothing is registered for that and no admin rights are needed.
 
-**The console codepage.** Drawing the glyphs is only half of it; the text has to
-reach the console intact first. A program writing through the byte-oriented
-console API encodes its text to the console's codepage before it writes, and
-upstream seeds that codepage from the machine's OEM codepage. On a machine whose
-locale is not Arabic, Persian is not representable in that codepage, so every
-letter becomes a literal `?`. That is the `????` you see on a Windows install
-with no Persian language support, and it is a conversion failure rather than a
-missing glyph.
+Both bundled fonts cover every one of the 45 core Persian and Arabic letters through their cmap tables, and both carry a real GSUB table with the Arabic shaping features (`ccmp`, `init`, `medi`, `fina`, `rlig`) under the `arab` script. DirectWrite applies those features because the renderer runs the text through `AnalyzeScript` first, and the script analysis that call returns for Arabic is what turns positional shaping on. Shaping does not depend on anything the machine happens to have installed.
 
-This build defaults the console to UTF-8 (codepage 65001) instead, so the
-round-trip holds on any machine regardless of its locale. The honest tradeoff: a
-program that deliberately writes bytes in the legacy OEM codepage, a batch file
-saved in the ANSI codepage for instance, will have those bytes read as UTF-8.
-Anything that writes UTF-8, the modern default, works, and a program that wants
-its old codepage back can still call `SetConsoleOutputCP`.
+Drawing the glyphs is only half of the problem. The text also has to reach the console intact. A program writing through the byte-oriented console API encodes its text to the console's codepage before it writes, and upstream seeds that codepage from the machine's OEM codepage. On a machine whose locale is not Arabic, Persian is not representable in that codepage, so every letter becomes a literal `?`. That is the `????` you see on a Windows install with no Persian language support, and it is a conversion failure, not a missing glyph.
 
-**System requirements:** Windows 10 version 2004 (build 19041) or later, the same
-floor as the upstream portable distribution. Windows Server 2019 is build 17763
-and is below it, so the terminal cannot run there and the installer says so
-rather than placing a copy that cannot open. Windows Server 2022 (build 20348)
-and later are supported.
+This build defaults the console to UTF-8 (codepage 65001) instead, so the round-trip holds on any machine regardless of its locale. One tradeoff is worth stating: a program that deliberately writes bytes in the legacy OEM codepage, a batch file saved in the ANSI codepage for instance, will have those bytes read as UTF-8. Anything that writes UTF-8 works, and UTF-8 is the modern default. A program that wants its old codepage back can still call `SetConsoleOutputCP`.
+
+**System requirements:** Windows 10 version 2004 (build 19041) or later, the same floor as the upstream portable distribution. Windows Server 2019 is build 17763 and is below it, so the terminal cannot run there and the installer says so rather than installing a copy that cannot open. Windows Server 2022 (build 20348) and later are supported.
 
 ## Patching an installed copy, and why it is not possible
 
-An honest note, because the alternative is shipping a tool that fails in a way
-that looks like the user's fault: **replacing files inside a Store-installed
-terminal is not possible on modern Windows.**
+An honest note, because the alternative is shipping a tool that fails in a way that looks like the user's fault: replacing files inside a Store-installed terminal is not possible on modern Windows.
 
-Store packages live in `C:\Program Files\WindowsApps`, which is protected by
-the Windows Container Isolation File System (`wcifs`) filter driver. We
-verified this directly on a fresh install. Taking ownership of the entire
-package recursively (`takeown /R /A /D Y`) succeeds: 265 files now owned by
-Administrators. Granting Administrators full control recursively
-(`icacls /grant *S-1-5-32-544:F /T`) also succeeds: 265 files processed, zero
-failures. Then creating a single new file in that same folder is still denied.
-`wcifs` ignores ownership and ACLs entirely; it blocks writes from any process
-that is not running inside the package's own container. The `takeown` recipe
-that works on Windows 8 and early Windows 10 does not work on anything that
-ships `wcifs`.
+Store packages live in `C:\Program Files\WindowsApps`, which is protected by the Windows Container Isolation File System (`wcifs`) filter driver. This was verified directly on a fresh install. Taking ownership of the entire package recursively (`takeown /R /A /D Y`) succeeds: 265 files become owned by Administrators. Granting Administrators full control recursively (`icacls /grant *S-1-5-32-544:F /T`) also succeeds: 265 files processed, zero failures. Then creating a single new file in that same folder is still denied. `wcifs` ignores ownership and ACLs entirely; it blocks writes from any process that is not running inside the package's own container. The `takeown` recipe that works on Windows 8 and early Windows 10 does not work on anything that ships `wcifs`.
 
-The only writer `wcifs` trusts is the AppX deployment API, the same path the
-Store itself uses. Going through it requires a package signed by Microsoft to
-replace the Store install in place, which is not something this project can do.
+The only writer `wcifs` trusts is the AppX deployment API, the same path the Store itself uses. Replacing the Store install in place through it requires a package signed by Microsoft, which this project cannot produce.
 
-**The portable build above is the working alternative.** It runs from any
-folder, reads your existing settings and fonts, needs no installation, and
-touches nothing outside that folder.
-
-An optional `install.ps1` is in the zip and gives the build a Start menu entry
-without touching the Store install, so the AppX work above is no longer the
-only route to that.
+The portable build above is the working alternative. It runs from any folder, reads your existing settings and fonts, needs no installation, and touches nothing outside that folder. An optional `install.ps1` in the zip gives the build a Start menu entry without touching the Store install.
 
 ## What the patch changes
 
-Five files, all in the Atlas renderer:
+Two patches are applied. They touch no file in common, because the renderer and the console host are separate.
 
-- `src/renderer/atlas/AtlasEngine.cpp`
-  Records a bidi level per cluster while shaping, applies Unicode bidi rule L2 to
-  put the clusters into visual order, emits an odd-level cluster's glyphs back to
-  front, permutes the colour planes into visual space, and maps the caret through
-  the same permutation.
-- `src/renderer/atlas/AtlasEngine.h` and `common.h`
-  The `ShapedRow` cluster record, the level range type, and the logical-to-visual
-  column map.
-- `src/renderer/atlas/DWriteTextAnalysis.cpp` and `.h`
-  `AnalyzeBidi` is actually called - `AnalyzeScript` on its own never runs the
-  bidi algorithm, so without it every cluster would come back level 0 - the sink
-  now collects the resolved levels, and a row's paragraph direction follows the
-  Unicode rules P2/P3: it is right-to-left when the row's *first* strong
-  character is right-to-left.
+The RTL patch changes five files, all in the Atlas renderer:
 
-The renderer is only half the story, so there is a second patch:
-
-```text
-patch/utf8-console-codepage.patch
-```
-
-It changes one line in `src/host/settings.cpp`. Upstream defaults the console's
-codepage to the machine's OEM codepage; this build defaults it to UTF-8, so a
-program encoding Persian to the console codepage does not turn every letter into
-a `?` on a machine whose locale is not Arabic. The Atlas renderer and the console
-host are separate, so the two patches touch no file in common.
+- `src/renderer/atlas/AtlasEngine.cpp`  
+  Records a bidi level per cluster while shaping, applies Unicode bidi rule L2 to put the clusters into visual order, emits an odd-level cluster's glyphs back to front, permutes the colour planes into visual space, and maps the caret through the same permutation.
+- `src/renderer/atlas/AtlasEngine.h` and `common.h`  
+  The `ShapedRow` cluster record, the level range type, and the logical-to-visual column map.
+- `src/renderer/atlas/DWriteTextAnalysis.cpp` and `.h`  
+  `AnalyzeBidi` is actually called. `AnalyzeScript` on its own never runs the bidi algorithm, so without it every cluster would come back level 0. The sink now collects the resolved levels, and a row's paragraph direction follows the Unicode rules P2/P3: it is right-to-left when the row's *first* strong character is right-to-left.
 
 The complete RTL patch is at:
 
@@ -174,48 +83,36 @@ patch/DWriteTextAnalysis.h
 patch/common.h
 ```
 
-Rows containing no RTL cluster at all are left untouched, so lines of only English
-text or numbers render bit-for-bit as before.
+The codepage patch changes one line in `src/host/settings.cpp`. Upstream defaults the console's codepage to the machine's OEM codepage; this build defaults it to UTF-8, so a program encoding Persian to the console codepage does not turn every letter into a `?` on a machine whose locale is not Arabic.
+
+```text
+patch/utf8-console-codepage.patch
+```
+
+Rows containing no right-to-left cluster at all are left untouched, so lines of only English text or numbers render bit-for-bit as before.
 
 ### Only part of the bidi algorithm
 
-Rule L2 is implemented, which is what reorders whole words, and paragraph
-direction is decided here by the Unicode rules P2/P3: a row is right-to-left when
-its *first* strong character is right-to-left, and left-to-right otherwise. A
-line that starts with a Latin prompt is therefore a left-to-right paragraph, the
-prompt keeps its place on the left, and any Persian, Arabic or Hebrew after it is
-a right-to-left run nested inside it, laid out the way a browser or a text editor
-lays out mixed content. A line that starts with Persian is a right-to-left
-paragraph and runs from the right. Where neutral characters such as spaces settle
-is resolved by DirectWrite from that paragraph direction. The `probe-para-dir`
-probe in `tools/bidi-probe` prints the resolved levels and the final visual order
-under both this rule and the older rule where any RTL letter makes the whole row
-RTL, so the difference is visible rather than argued about.
+Rule L2 is implemented, which is what reorders whole words, and paragraph direction is decided by the Unicode rules P2/P3: a row is right-to-left when its *first* strong character is right-to-left, and left-to-right otherwise. A line that starts with a Latin prompt is therefore a left-to-right paragraph: the prompt keeps its place on the left, and any Persian, Arabic or Hebrew after it is a right-to-left run nested inside it, laid out the way a browser or a text editor lays out mixed content. A line that starts with Persian is a right-to-left paragraph and runs from the right. Where neutral characters such as spaces settle is resolved by DirectWrite from that paragraph direction.
 
-Not implemented here: bracket mirroring and number shaping (L3/L4), so mixed
-content such as `ABC سلام 123` may put the digits in the wrong place.
-
-This is a deliberate stopping point rather than an oversight: each rule has to be
-correct on its own before it is layered on.
+Not implemented here: bracket mirroring and number shaping (L3/L4), so mixed content such as `ABC سلام 123` may put the digits in the wrong place. This is a deliberate stopping point rather than an oversight: each rule has to be correct on its own before it is layered on.
 
 ### How it was verified
 
-`tools/bidi-probe` holds six small programs that answer questions about the
-rendering that cannot be answered by looking at a screen. They run in CI and
-their output is attached to the workflow run as build artifacts:
+`tools/bidi-probe` holds small programs that answer questions about the rendering that cannot be answered by looking at a screen. They run in CI and their output is attached to the workflow run as build artifacts.
 
 | probe | question |
 |---|---|
 | `probe-rtl-layout` | Runs the renderer's own pipeline and checks that reading the emitted cells in the corresponding direction reproduces the input. This is what distinguishes "the words moved" from "the words are wrong". |
-| `probe-para-dir` | How a row's paragraph direction is decided. Prints the resolved levels and the final visual order for a prompt followed by Persian under both P2/P3, which looks at the first strong character, and the older rule that any strong RTL letter is decisive, so the difference is visible. |
+| `probe-para-dir` | How a row's paragraph direction is decided. Prints the resolved levels and the final visual order under both P2/P3, which looks at the first strong character, and the older rule that any strong RTL letter is decisive. |
 | `probe-glyph-order` | Whether DirectWrite returns the glyphs of an RTL run in logical or visual order. This decides whether rule L2 has to reverse the clusters. |
 | `probe-glyph-direction` | Whether DirectWrite reverses them anyway when asked for left to right. |
-| `probe-lamalef-real` | Which installed fonts fuse lam-alef, the ligature Arabic script requires. Answer: 16 of the 22 families that carry Arabic. The earlier "0 of 22" result was an artifact of hand-setting `DWRITE_SCRIPT_SHAPES_DEFAULT`, which suppresses shaping; `AnalyzeScript` returns a different shape value for Arabic and that is what makes DirectWrite apply GSUB. The bundled Cascadia fonts shape positionally but do not fuse lam-alef, which is a property of that font, not of the pipeline. |
+| `probe-lamalef-real` | Which installed fonts fuse lam-alef, the ligature Arabic script requires. The bundled Cascadia fonts shape positionally but do not fuse lam-alef, which is a property of that font, not of the pipeline. |
 | `probe-font-fit` | Which font fits a terminal's cell grid. A terminal forces every shaped cluster to exactly one cell, so a font whose Arabic glyphs are narrower than the cell gets stretched, and that is what reads as a gap between letters. |
 
 They need no Windows Terminal to build:
 
-```
+```text
 cl /nologo /EHsc /std:c++20 probe-rtl-layout.cpp /link dwrite.lib
 probe-rtl-layout.exe
 ```
@@ -228,8 +125,7 @@ Requirements:
 - The Windows 10 SDK
 - Python 3
 
-The Windows Terminal version being patched is in `UPSTREAM_REF`. The build script
-clones it, applies the patch, and produces the portable build:
+The Windows Terminal version being patched is specified by `UPSTREAM_REF`. The build script clones it, applies the patches and produces the portable build:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1 -Arch x64
@@ -243,30 +139,20 @@ Builds are done in CI on `windows-latest`.
 
 ### A note on the build system
 
-Two things about building Windows Terminal unpackaged are not obvious and cost a
-long time to find, so they are recorded in `patch/build-unpackaged.patch`:
+Two things about building Windows Terminal unpackaged are not obvious and cost a long time to find, so they are recorded in `patch/build-unpackaged.patch`:
 
-- Do **not** pass `-p:WindowsStoreApp=false` or `-p:ApplicationType=`. A `-p:`
-  value is a global property that overrides the project, and those two silently
-  disable the XAML compiler, the generated-files directory, the UAP platform
-  winmds and the include paths for generated XAML sources.
-- The build must run on a Visual Studio whose version matches the Windows SDK.
-  An older one pairs its `Microsoft.Build.Tasks.Xaml` task with a newer SDK's
-  compiler, and the settings editor's XAML then dies with
-  `WMC9999: Value cannot be null. Parameter name: name` - an internal exception,
-  not a diagnosable error. This is why CI builds on `windows-latest`.
+- Do **not** pass `-p:WindowsStoreApp=false` or `-p:ApplicationType=`. A `-p:` value is a global property that overrides the project, and those two silently disable the XAML compiler, the generated-files directory, the UAP platform winmds and the include paths for generated XAML sources.
+- The build must run on a Visual Studio whose version matches the Windows SDK. An older one pairs its `Microsoft.Build.Tasks.Xaml` task with a newer SDK's compiler, and the settings editor's XAML then fails with `WMC9999: Value cannot be null. Parameter name: name`, which is an internal exception rather than a diagnosable error. This is why CI builds on `windows-latest`.
 
 ## Status
 
-This repository is a workaround until right-to-left support is merged into
-Windows Terminal itself.
+This repository is a workaround until right-to-left support is merged into Windows Terminal itself.
 
 ## License
 
 Windows Terminal is MIT licensed; the license text is in `LICENSE`.
 
-The binaries in the releases are modified versions of Windows Terminal and remain
-subject to its license terms.
+The binaries in the releases are modified versions of Windows Terminal and remain subject to its license terms.
 
 ## Contributors
 
@@ -281,105 +167,12 @@ The RTL patch under `patch/` was written with AI assistance from Claude.
 
 این پروژه مشکل نمایش متن‌های راست‌به‌چپ، به‌ویژه فارسی، عربی و عبری، رو در نسخهٔ ویندوز Windows Terminal برطرف می‌کنه.
 
-### دانلود
+برای استفاده، نسخهٔ مناسب سیستم خودتون رو از بخش [Releases](../../releases) دانلود کنید. فایل‌های پورتابل نیازی به نصب ندارند، تنظیمات فعلی Windows Terminal شما رو می‌خونن و حتی فونت‌های خودشون رو همراه دارن، پس روی سیستمی که هیچ فونتی نصب نیست هم کار می‌کنن. اگه نصب‌کننده رو ترجیح می‌دید، `WindowsTerminal-RTL-Installer.exe` یه ویزارد کوتاه باز می‌کنه که بیلد مناسب رو دانلود و نصب می‌کنه.
 
-از بخش [Releases](../../releases) نسخهٔ مناسب سیستمتون رو بگیرید:
+جایگزینی فایل‌های داخل ترمینال نصب‌شده از Store ممکن نیست، چون `C:\Program Files\WindowsApps` با درایور `wcifs` محافظت می‌شه و نوشتن از بیرون کانتینر پکیج رو کلاً مسدود می‌کنه. بیلد پورتابل بالا جایگزین کارآمده.
 
-- `WindowsTerminal-RTL-Installer.exe` فایل نصب، یک فایل که بیلد مناسب سیستم شما را دانلود و نصب می‌کند
-- `WindowsTerminal-RTL-Portable-x64.exe` کل بیلد x64 در یک فایل، بدون نصب و بدون باز کردن zip؛ هرجا اجرا کنید
-- `WindowsTerminal-RTL-Portable-arm64.exe` همین برای ویندوز روی ARM
-- `WindowsTerminal-RTL-x64.zip` برای پردازنده‌های ۶۴ بیتی اینتل/AMD
-- `WindowsTerminal-RTL-arm64.zip` برای ویندوز روی ARM
-- `windowsterminal-rtl.patch` خود پچ RTL، برای بیلد گرفتن خودتان از Windows Terminal
-- `build-unpackaged.patch` تغییرات لازم برای تولید بیلد unpackaged
-
-نسخهٔ **پورتابل** نیازی به نصب ندارد. تنظیمات فعلی Windows Terminal شما را هم می‌خواند، پروفایل‌ها، تم‌ها، طرح‌رنگ‌ها و فونت‌هایتان حفظ می‌شوند:
-
-```text
-%LOCALAPPDATA%\Microsoft\Windows Terminal
-```
-
-فایل zip را هرجا باز کنید.
-
-- **نصب:** `WindowsTerminal-RTL-Installer.exe` را از صفحهٔ Releases بگیرید و دوبار‌کلیک کنید. یک ویزارد کوتاه باز می‌شود: معماری را انتخاب می‌کنید، پوشهٔ نصب را مشخص می‌کنید، انتخاب می‌کنید که میانبر منوی Start و دسکتاپ ساخته شود یا نه، و بعد بیلد مناسب دانلود، با sha256 تأیید و نصب می‌شود. زبان ویزارد پیش‌فرض انگلیسی است و اگر زبان نمایش ویندوز فارسی باشد فارسی می‌شود؛ دکمهٔ زبان در گوشهٔ بالای ویزارد هر لحظه بین این دو جابه‌جا می‌شود. نیازی به دسترسی مدیر ندارد و به ترمینال Store دست نمی‌زند. نصب خودش را در *Add or remove programs* ثبت می‌کند، پس از همان تنظیمات هم قابل حذف است. اگر نصب‌کننده را دوباره روی نصبی که از قبل وجود دارد اجرا کنید، سه گزینه پیش شماست: **بروزرسانی** وقتی بیلد نصب‌شده قدیمی‌تر از نصب‌کننده باشد که آخرین نسخه را دانلود و بیلد را همان‌جا جایگزین می‌کند، **تعمیر** که میانبرها و ثبت *Add or remove programs* را بدون دانلود دوباره می‌سازد، و **حذف نصب**. از خط فرمان هم `--uninstall` حذف می‌کند و `--repair` میانبرها را بازسازی می‌کند.
-- **بدون نصب:** همان `WindowsTerminal.exe` را از پوشه اجرا کنید. چیزی نصب نمی‌شود و خارج از آن پوشه چیزی لمس نمی‌شود.
-- **یک فایل، حتی بدون zip:** `WindowsTerminal-RTL-Portable-x64.exe` (یا نسخهٔ `arm64`) را از هرجا که گذاشته‌اید اجرا کنید. کل بیلد داخل همان یک فایل است. اولین اجرا آن را در `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL-Portable` باز می‌کند و ترمینال را بالا می‌آورد، و اجراهای بعدی فوری هستند، چون محتوا از قبل روی دیسک است و نشانگر هنوز با آن مطابقت دارد. چیزی ثبت نمی‌شود و دسترسی مدیر خواسته نمی‌شود. یک ریلیز جدید پوشهٔ نسخهٔ قبلی را جایگزین می‌کند، پس دو نسخه هرگز با هم قاطی نمی‌شوند.
-- **با ورودی در منوی Start:** داخل zip یک `install.ps1` هم هست. روی آن راست‌کلیک کنید و *Run with PowerShell* را بزنید. بیلد را به `%LOCALAPPDATA%\Programs\WindowsTerminal-RTL` کپی می‌کند، یک شورتکات در منوی Start (و یکی روی دسکتاپ) می‌سازد و نیازی به دسترسی مدیر ندارد. با `install.ps1 -Uninstall` هم حذف می‌شود. تنظیمات شما در هر دو حالت دست‌نخورده می‌مانند، چون بیلد پورتابل همان مسیر تنظیمات unpackaged بالا را می‌خواند.
-
-بیلد فونت‌های خودش را همراه دارد. `CascadiaCode.ttf` و `CascadiaMono.ttf` کنار `WindowsTerminal.exe` قرار دارند و ترمینال هر `.ttf` که کنار فایل اجرایی خودش باشد را *قبل از* درخواست فونت از سیستم بارگذاری می‌کند، بنابراین روی سیستمی که اصلاً فونتی نصب نیست هم متن خود را نشان می‌دهد. هیچ فونتی ثبت نمی‌شود و دسترسی مدیر هم لازم نیست. همین چیزی است که بیلد پورتابل و فایل تک‌فایلهٔ بالا را مستقل از سیستمی می‌کند که رویش اجرا می‌شوند.
-
-همین فونت‌هاست که فارسی و عربی را بدون هیچ پیش‌نیازی کار می‌کند. هر دو فونتِ همراه هر ۴۵ حرف اصلی فارسی/عربی را از طریق جدول cmap پوشش می‌دهند و هر دو یک جدول واقعی GSUB با ویژگی‌های شکل‌دهی عربی (`ccmp`، `init`، `medi`، `fina`، `rlig`) برای اسکریپت `arab` دارند. شکل‌دهی، و در نتیجهٔ آن شکل‌های متصل که این خط لازم دارد، به چیزی که روی سیستمی نصب شده بستگی ندارد. DirectWrite این ویژگی‌ها را اعمال می‌کند چون رندرر اول متن را از `AnalyzeScript` عبور می‌دهد، و تحلیلی که این فراخوانی برای عربی برمی‌گرداند چیزی است که شکل‌دهی موقعیتی را روشن می‌کند.
-
-**کدپیج کنسول.** رسم گلیف‌ها نیمی ماجراست؛ متن باید اول سالم وارد کنسول شود. برنامه‌ای که از API بایتی کنسول می‌نویسد اول متنش را به کدپیج کنسول رمزگذاری می‌کند و بعد می‌نویسد، و بالادست این کدپیج را از کدپیج OEM همان ماشین می‌گیرد. روی سیستمی که locale آن عربی نیست، فارسی در آن کدپیج جایی ندارد، پس هر حرف به یک `?` واقعی تبدیل می‌شود. همین `????` است که روی یک ویندوز بدون پشتیبانی زبان فارسی می‌بینید، و این شکستِ تبدیل است، نه کمبود گلیف.
-
-این بیلد به جای آن کنسول را روی UTF-8 (کدپیج ۶۵۰۰۱) پیش‌فرض می‌کند، پس این رفت‌وبرگشت روی هر سیستمی و فارق از locale آن کار می‌کند. بده‌بستان صادقانه‌اش: برنامه‌ای که عمداً بایت‌ها را به کدپیج قدیمی OEM می‌نویسد، مثلاً یک فایل batch با رمزگذاری ANSI، از این پس آن بایت‌ها به‌عنوان UTF-8 خوانده می‌شوند. هر چیزی که UTF-8 می‌نویسد، که پیش‌فرض مدرن است، کار می‌کند، و برنامه‌ای که کدپیج قدیمی‌اش را می‌خواهد هنوز هم می‌تواند `SetConsoleOutputCP` صدا بزند.
-
-**پیش‌نیاز سیستم:** ویندوز ۱۰ نسخهٔ ۲۰۰۴ (بیلد ۱۹۰۴۱) یا جدیدتر، همان حدی که توزیع پورتابل بالادست لازم دارد. Windows Server 2019 بیلد ۱۷۷۶۳ است و پایین‌تر از این حد است، پس ترمینال روی آن اجرا نمی‌شود و نصب‌کننده همین را به شما می‌گوید، به جای اینکه نسخه‌ای را نصب کند که باز نمی‌شود. Windows Server 2022 (بیلد ۲۰۳۴۸) و جدیدتر پشتیبانی می‌شوند.
-
-### اصلاح نسخهٔ نصب‌شده و چرا ممکن نیست
-
-یادداشت صادقانه، چون در غیر این صورت پروژه ابزاری منتشر می‌کند که شکستش شبیه تقصیر خود کاربر است: **جایگزینی فایل‌ها داخل یک ترمینال نصب‌شده از Store در ویندوزهای جدید ممکن نیست.**
-
-بسته‌های Store داخل `C:\Program Files\WindowsApps` هستند که توسط درایور فیلتر «سیستم فایل ایزولهٔ ویندوز» (`wcifs`) محافظت می‌شود. ما این را روی یک نصب تازه خودمان تست کردیم: گرفتن مالکیت کل پکیج به‌صورت بازگشتی (`takeown /R /A /D Y`) موفق می‌شود، ۲۶۵ فایل به مالکیت مدیران درمی‌آید. دادن دسترسی کامل به مدیران به‌صورت بازگشتی (`icacls /grant *S-1-5-32-544:F /T`) هم موفق می‌شود، ۲۶۵ فایل پردازش، صفر شکست. با این حال ساختن یک فایل جدید در همان پوشه همچنان رد می‌شود. `wcifs` اصلاً به مالکیت و ACL نگاه نمی‌کند؛ نوشتن از هر پروسه‌ای که داخل کانتینر خود پکیج اجرا نمی‌شود را مسدود می‌کند. همان دستور `takeown` که در ویندوز ۸ و ویندوز ۱۰ٔ اولیه کار می‌کرد، در سیستمی که `wcifs` دارد دیگر کار نمی‌کند.
-
-تنها نوشتنی که `wcifs` به آن اعتماد می‌کند API استقرار AppX است، همان مسیری که خود Store از آن استفاده می‌کند. استفاده از آن برای جایگزینی نصب Store در جای خودش نیازمند پکیجی امضاشده توسط مایکروسافت است که این پروژه نمی‌تواند تولید کند.
-
-**بیلد پورتابل بالا جایگزین کارآمد است.** از هر پوشه‌ای اجرا می‌شود، تنظیمات و فونت‌های فعلی شما را می‌خواند، نیازی به نصب ندارد و خارج از آن پوشه هیچ‌چیز را لمس نمی‌کند.
-
-یک `install.ps1` اختیاری داخل zip قرار دارد که بدون دست زدن به نصب Store، یک ورودی در منوی Start به بیلد می‌دهد؛ بنابراین کار روی AppX بالا تنها راه رسیدن به آن نیست.
-
-### چه چیزی تغییر کرده
-
-پنج فایل، همه در رندرکنندهٔ Atlas:
-
-- `src/renderer/atlas/AtlasEngine.cpp`
-- `src/renderer/atlas/AtlasEngine.h`
-- `src/renderer/atlas/DWriteTextAnalysis.cpp`
-- `src/renderer/atlas/DWriteTextAnalysis.h`
-- `src/renderer/atlas/common.h`
-
-قاعدهٔ L2 یونیکد پیاده شده که ترتیب کلمات را درست می‌کند، و جهت پاراگراف هم همین‌جا بر اساس قاعده‌های P2/P3 یونیکد تعیین می‌شود: سطری راست‌به‌چپ است که *اولین* حرف قوی آن راست‌به‌چپ باشد، و در غیر این صورت چپ‌به‌راست است. بنابراین سطری که با یک پرامپت انگلیسی شروع می‌شود یک پاراگراف چپ‌به‌راست می‌ماند، پرامپت همان‌جای خودش سمت چپ حفظ می‌شود، و هر متن فارسی، عربی یا عبری که بعد از آن بیاید یک بازهٔ راست‌به‌چپ درون همان پاراگراف است و مثل کاری که یک مرورگر یا ویرایشگر متن با محتوای ترکیبی می‌کند چیده می‌شود. سطری که با فارسی شروع شود یک پاراگراف راست‌به‌چپ است و از سمت راست چیده می‌شود. محل قرار گرفتن نویسه‌های خنثی مثل فاصله را خود DirectWrite بر اساس همان جهت پاراگراف مشخص می‌کند. پروب `probe-para-dir` در `tools/bidi-probe` سطوح حل‌شده و ترتیب نهایی تصویری را زیر هر دو قاعده چاپ می‌کند، یعنی همین قاعده و قاعدهٔ قدیمی‌تر که هر حرف راست‌به‌چپی کل سطر را راست‌به‌چپ می‌کرد، تا تفاوت دیده شود به‌جای اینکه درباره‌اش بحث شود.
-
-سطرهایی که هیچ متن راست‌به‌چپ ندارند دست‌نخورده می‌مانند، پس متن انگلیسی و عدد دقیقاً مثل قبل رسم می‌شود.
-
-آینه‌کردن پرانتز و شکل‌دهی اعداد (L3/L4) هنوز پیاده نشده‌اند، پس محتوای ترکیبی مثل `ABC سلام 123` ممکن است جای عددها جابه‌جا نشان داده شود.
-
-رندرر تنها نیمی از ماجراست، برای همین یک پچ دوم هم هست:
-
-```text
-patch/utf8-console-codepage.patch
-```
-
-یک خط در `src/host/settings.cpp` را تغییر می‌دهد. بالادست کدپیج کنسول را از کدپیج OEM همان ماشین می‌گیرد؛ این بیلد آن را UTF-8 می‌گیرد، تا برنامه‌ای که فارسی را به کدپیج کنسول رمزگذاری می‌کند روی سیستمی که locale عربی ندارد هر حرف را به `?` تبدیل نکند. رندرر Atlas و کنسول هاست از هم جدایند، پس این دو پچ هیچ فایل مشترکی ندارند.
-
-پچ کامل در `patch/windowsterminal-rtl.patch` و نسخهٔ خوانای فایل‌های تغییرکرده در `patch/` است.
-
-### آزمون‌ها
-
-شش برنامهٔ کوچک در `tools/bidi-probe` هست که به سؤال‌هایی جواب می‌دهند که با نگاه کردن به صفحه نمی‌شود پرسید، از جمله اینکه آیا خواندنِ سلول‌های رسم‌شده متن اصلی را برمی‌گرداند یا نه، جهت پاراگراف یک سطر باید چطور تعیین شود، و کدام فونت با شبکهٔ سلولی ترمینال جور درمی‌آید. خروجی‌شان در هر بیلد اجرا می‌شود و به‌عنوان artifact به همان اجرای CI پیوست می‌شود، ولی دیگر داخل صفحهٔ ریلیز قرار نمی‌گیرد.
-
-دو نکته که با اندازه‌گیری ثابت شده و ممکن است انتظارش را نداشته باشید:
-
-- **لام‌الف در فونت‌های همراه ترکیب نمی‌شود**. ۱۶ تا از ۲۲ خانوادهٔ فونتِ عربی‌دارِ این سیستم لام‌الف را در یک گلیف ترکیب می‌کنند، ولی فونت‌های Cascadia که همراه بیلد می‌آیند این‌گونه نیستند. این ویژگیِ خودِ آن فونت است، نه خط لولهٔ شکل‌دهی: فونت‌های همراه شکل‌دهی موقعیتی را درست انجام می‌دهند (شکلِ هر حرف به جایگاهش در کلمه بستگی دارد) ولی lookup مربوط به لیگاتور لام‌الف را ندارند.
-- **فاصلهٔ بین حروف به عرض سلول بستگی دارد.** ترمینال هر cluster را دقیقاً روی یک سلول می‌کشد، پس فونتی که گلیف‌های عربی‌اش باریک‌تر از سلول باشد کشیده می‌شود. نسبت گلیف عربی به سلول بین ۰.۵۹ تا ۱.۲۱ varies است؛ `Vazir Code Hack` با ۱.۰۳ نزدیک‌ترین گزینهٔ نصب‌شده است.
-
-### ساخت از سورس
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1 -Arch x64
-```
-
-نسخهٔ Windows Terminal که پچ می‌شود در فایل `UPSTREAM_REF` مشخص است.
-
-⚠️ در بیلد Windows Terminal نباید `-p:WindowsStoreApp=false` یا `-p:ApplicationType=` را بدهید؛ این‌ها کامپایلر XAML را از کار می‌اندازند. همچنین بیلد باید روی نسخه‌ای از Visual Studio اجرا شود که با Windows SDK هم‌نسخه باشد، وگرنه بخش تنظیمات با خطای داخلی `WMC9999` می‌افتد. به همین دلیل CI روی `windows-latest` بیلد می‌کند.
+از ویندوز ۱۰ نسخهٔ ۲۰۰۴ به بعد پشتیبانی می‌شه. این پروژه راه‌حلی موقته تا پشتیبانی کامل از راست‌به‌چپ مستقیماً به Windows Terminal اضافه بشه.
 
 ### مجوز
 
-Windows Terminal تحت مجوز MIT منتشر شده و متن آن در `LICENSE` موجود است. فایل‌های باینری داخل ریلیز، نسخهٔ تغییرکردهٔ Windows Terminal هستند و تابع همان مجوز می‌مانند.
-
-### مشارکت‌کنندگان
-
-- AmirAliManzar
-- Claude
-
-پچ راست‌به‌چپ در `patch/` با کمک Claude نوشته شده است.
+Windows Terminal تحت مجوز MIT منتشر می‌شه و فایل‌های باینری ریلیز، نسخهٔ تغییرکردهٔ اون هستن. متن مجوز تو `LICENSE` موجوده.
